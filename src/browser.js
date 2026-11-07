@@ -7,6 +7,7 @@ const { ProxyStore } = require('./proxystore');
 const { checkProxy } = require('./proxycheck');
 const { privateDirectory } = require('./privatefiles');
 const { prepareDownloads, configureDownloads } = require('./downloads');
+const { WindowStateManager } = require('./windowstate');
 
 function findFreePort(min, max) {
   return new Promise((resolve, reject) => {
@@ -33,6 +34,7 @@ class BrowserManager {
     this.cancelled = new Set();
     this.startPage = options.startPage !== false;
     this.profileIcons = options.profileIcons !== false;
+    this.windowStates = new WindowStateManager(settings);
   }
   isOpen(id) { return this.sessions.has(id) || this.opening.has(id); }
   listOpen() {
@@ -108,6 +110,14 @@ class BrowserManager {
           ...webrtcArgs({ ...effective, proxy: proxy || useSystemProxy || profile.webrtc === 'auto' }),
         ],
       };
+      if (!headless && process.platform === 'win32') {
+        await this.windowStates.capture();
+        const state = this.windowStates.desired();
+        launchOptions.viewport = null;
+        delete launchOptions.deviceScaleFactor;
+        launchOptions.args.push(state === 'fullscreen' ? '--start-fullscreen' : state === 'maximized'
+          ? '--start-maximized' : `--window-size=${profile.viewport.width},${profile.viewport.height}`);
+      }
       // Deliberately no arbitrary LFB_EXTRA_ARGS: they could disable sandbox,
       // alter proxy routing or invalidate the native consistency contract.
       if (process.env.LFB_CHROMIUM_EXECUTABLE) launchOptions.executablePath = process.env.LFB_CHROMIUM_EXECUTABLE;
@@ -120,6 +130,7 @@ class BrowserManager {
       privateDirectory(directory);
       await prepareDownloads(directory, this.downloadsDirectory);
       context = await chromium.launchPersistentContext(directory, launchOptions);
+      if (!headless && process.platform === 'win32') await this.windowStates.attach(context);
       await configureDownloads(context);
       checkCancelled();
       const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network };
@@ -156,6 +167,7 @@ class BrowserManager {
       await this.opening.get(id)?.catch(() => {});
       const session = this.sessions.get(id);
       if (session) {
+        if (!session.headless && process.platform === 'win32') await this.windowStates.capture().catch(error => console.error('[CIKE] remember window:', error.message));
         await session.context.close();
         await session.forwarder?.stop();
         if (this.sessions.get(id) === session) this.sessions.delete(id);

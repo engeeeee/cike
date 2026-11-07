@@ -751,6 +751,7 @@ document.getElementById('btn-del-proxies').onclick = () => runBatch('proxy', 'de
 async function loadSettings() {
   const { settings } = await api('/api/settings');
   document.getElementById('set-socks-system-proxy').value = settings.socksViaSystemProxy ? 'yes' : 'no';
+  document.getElementById('set-browser-window-mode').value = settings.browserWindowMode || 'remember';
   document.getElementById('set-api-url').value = apiBase() + '/';
   document.getElementById('set-api-token').value = token();
   try {
@@ -814,6 +815,12 @@ document.getElementById('btn-save-proxy-route').onclick = async () => {
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ socksViaSystemProxy: document.getElementById('set-socks-system-proxy').value === 'yes' }) });
     toast('代理连接设置已保存');
+  } catch (e) { toast(e.message, true); }
+};
+document.getElementById('btn-save-window-mode').onclick = async () => {
+  try {
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ browserWindowMode: document.getElementById('set-browser-window-mode').value }) });
+    toast('浏览器窗口设置已保存');
   } catch (e) { toast(e.message, true); }
 };
 document.getElementById('btn-check-update').onclick = async () => {

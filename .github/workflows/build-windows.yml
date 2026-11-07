@@ -2,7 +2,8 @@ name: Build Windows x64
 
 on:
   push:
-    branches: [windows, 'windows/**']
+    branches: [main, windows, 'windows-*', 'windows/**']
+    paths-ignore: [README.md, 'docs/**', .github/workflows/publish-windows.yml]
   pull_request:
   workflow_dispatch:
 
@@ -28,6 +29,8 @@ jobs:
           $browser = node -p "require('playwright').chromium.executablePath()"
           "LFB_CHROMIUM_EXECUTABLE=$browser" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm test
+      - name: Verify native Windows window state and fullscreen inheritance
+        run: node --test --test-concurrency=1 test/windows-window.test.js
       - name: Verify CIKE's Windows kernel installer
         run: node --test test/windows-runtime.test.js
       - run: npm run test:desktop
