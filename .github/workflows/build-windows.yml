@@ -32,10 +32,12 @@ jobs:
           "LFB_CHROMIUM_EXECUTABLE=$browser" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm test
       - name: Verify the requested detector with native hardware simulation
+        if: ${{ !cancelled() }}
         run: node scripts/check-native-site.js
       - name: Verify native Windows window state and fullscreen inheritance
         run: node --test --test-concurrency=1 test/windows-window.test.js
       - name: Verify native fingerprint core window and fullscreen inheritance
+        if: ${{ !cancelled() }}
         run: node --test test/kernel-window.test.js
       - name: Verify CIKE's Windows kernel installer
         run: node --test test/windows-runtime.test.js

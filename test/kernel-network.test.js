@@ -31,7 +31,9 @@ test('native core routes localhost through the selected proxy, has no direct fal
       }, udp.address().port);
       assert.equal(packets, 0);
       await close(proxy); proxyClosed = true;
-      await assert.rejects(page.goto(url + '/closed', { timeout: 6000 }), /NS_ERROR|PROXY|CONNECTION|ERR_/);
+      // Windows may keep retrying the dead proxy until the navigation deadline.
+      // Either failure is valid; the direct target must receive zero requests.
+      await assert.rejects(page.goto(url + '/closed', { timeout: 6000 }), error => error.name === 'TimeoutError' || /NS_ERROR|PROXY|CONNECTION|ERR_/.test(error.message));
       assert.equal(direct, 0);
     } finally { await manager.closeAll(); if (!proxyClosed) await close(proxy); await close(target); udp.close(); fs.rmSync(directory, { recursive: true, force: true }); }
   });
