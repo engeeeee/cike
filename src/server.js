@@ -102,6 +102,22 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
   });
 
   app.use(async (ctx, next) => {
+    if (ctx.path === '/api/browserWindows') {
+      // Capability is scoped to window state and expires with this browser.
+      // The extension never receives the general API token.
+      const entry = browsers.windowTokens.get(ctx.get('x-cike-window-token'));
+      if (!entry) ctx.throw(401, 'invalid window token');
+      const origin = ctx.get('origin');
+      if (origin && origin !== 'null' && !/^moz-extension:\/\/[a-f0-9-]+$/i.test(origin)) ctx.throw(403, 'browser origin not allowed');
+      if (ctx.method === 'GET') {
+        await browsers.windowStates.capture();
+        entry.ready = true;
+        ctx.body = { ok: true, state: browsers.windowStates.desired(), mode: settings.get().browserWindowMode };
+        return;
+      }
+      if (ctx.method !== 'PATCH') ctx.throw(405);
+      return next();
+    }
     if (!ctx.path.startsWith('/api/')) return next();
     const origin = ctx.get('origin');
     if (origin && origin !== 'null') ctx.throw(403, 'browser origin not allowed');
@@ -128,7 +144,7 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
 
   // --- meta ---
   router.get('/getVersion', (ctx) => {
-    ctx.body = { ok: true, version: VERSION, name: 'cike', platform: HOST_PLATFORM, fingerprintMode: 'per-profile', fingerprintModes: ['native', 'hardware'], credentialProtection: proxyStore.codec.protection };
+    ctx.body = { ok: true, version: VERSION, name: 'cike', platform: HOST_PLATFORM, fingerprintMode: 'per-profile', fingerprintModes: ['native', 'hardware', 'kernel'], credentialProtection: proxyStore.codec.protection };
   });
 
   router.get('/settings', (ctx) => {
@@ -136,6 +152,15 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
   });
   router.get('/fingerprints/options', ctx => { ctx.body = { ok: true, ...require('./hardware').hardwareOptions() }; });
   router.post('/fingerprints/generate', ctx => { ctx.body = { ok: true, fingerprint: require('./hardware').generateHardware() }; });
+  router.patch('/browserWindows', ctx => {
+    const state = ctx.request.body?.state;
+    if (!['normal', 'maximized', 'fullscreen'].includes(state)) ctx.throw(400, '无效的窗口状态');
+    if (settings.get().browserWindowMode === 'remember') {
+      browsers.windowStates.current = state;
+      settings.rememberWindowState(state);
+    }
+    ctx.body = { ok: true };
+  });
 
   router.patch('/settings', (ctx) => {
     ctx.body = { ok: true, settings: settings.set(ctx.request.body || {}) };
@@ -324,6 +349,7 @@ async function startBackend(dataDir = DATA_DIR, options = {}) {
     const s = backend.app.listen(port, '127.0.0.1', () => resolve(s));
     s.once('error', reject);
   });
+  backend.browsers.localAPIUrl = url;
   return { ...backend, url, port, server };
 }
 

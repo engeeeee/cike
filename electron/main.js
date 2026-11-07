@@ -12,6 +12,7 @@ const fs = require('fs');
 const { startBackend, DATA_DIR } = require('../src/server');
 const { chromiumStatus, downloadChromium, executableMarker } = require('./chromium');
 const { checkUpdate, installUpdate } = require('./updater');
+const { nativeStatus, downloadNative } = require('./nativecore');
 
 let backend = null;
 let mainWindow = null;
@@ -105,6 +106,14 @@ function handle(channel, callback) {
 }
 handle('chromium-status', async () => {
   return chromiumStatus(DATA_DIR);
+});
+handle('native-status', () => nativeStatus(DATA_DIR));
+handle('native-download', async event => {
+  if (backend.browsers.listOpen().length || backend.browsers.opening.size) throw new Error('请先关闭所有环境再更新内核');
+  try {
+    const executable = await downloadNative(DATA_DIR, progress => event.sender.send('native-download-progress', progress));
+    return { ok: true, executable };
+  } catch (error) { return { ok: false, error: error.message }; }
 });
 
 handle('chromium-download', async (event) => {

@@ -22,6 +22,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:unit
+      - name: Install and verify pinned native fingerprint core
+        run: node scripts/install-native-ci.js
       - run: npx playwright install chromium
       - name: Use full Chromium for regression tests
         shell: pwsh
@@ -29,13 +31,24 @@ jobs:
           $browser = node -p "require('playwright').chromium.executablePath()"
           "LFB_CHROMIUM_EXECUTABLE=$browser" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm test
+      - name: Verify the requested detector with native hardware simulation
+        if: ${{ !cancelled() }}
+        run: node scripts/check-native-site.js
       - name: Verify native Windows window state and fullscreen inheritance
+        if: ${{ !cancelled() }}
         run: node --test --test-concurrency=1 test/windows-window.test.js
+      - name: Verify native fingerprint core window and fullscreen inheritance
+        if: ${{ !cancelled() }}
+        run: node --test test/kernel-window.test.js
       - name: Verify CIKE's Windows kernel installer
+        if: ${{ !cancelled() }}
         run: node --test test/windows-runtime.test.js
       - run: npm run test:desktop
+        if: ${{ !cancelled() }}
       - run: npm run pack:win-x64
+        if: ${{ !cancelled() }}
       - name: Verify packaged Windows app
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           $env:CIKE_TEST_APP = Join-Path $pwd 'dist/CIKE-win32-x64/CIKE.exe'
