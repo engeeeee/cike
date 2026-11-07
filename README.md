@@ -4,6 +4,8 @@
 
 <h1 align="center">CIKE</h1>
 
+> **Windows 独立移植分支**：Windows 10/11 x64 的使用与构建说明见 [Windows 文档](docs/WINDOWS.md)。运行 `npm run pack:win-x64` 生成包含 `CIKE.exe` 的解压即用包。下方正式发布与 macOS 安装说明保留自上游。
+
 <p align="center">本地多环境浏览器 · 独立会话 · 代理管理 · 自动化 API</p>
 
 ## Windows 版本说明

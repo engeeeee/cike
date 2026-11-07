@@ -12,7 +12,6 @@
  * Everything runs locally. No vendor backend, no account system.
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const net = require('net');
@@ -27,7 +26,7 @@ const { checkProxy } = require('./proxycheck');
 const { Settings } = require('./settings');
 
 const VERSION = require('../package.json').version;
-const DATA_DIR = process.env.LFB_DATA || path.join(os.homedir(), '.local-fingerprint-browser');
+const DATA_DIR = require('./platform').defaultDataDirectory();
 const PORT_MIN = 4440;
 const PORT_MAX = 4539;
 const DISCOVERY_FILE = 'local_api_url.txt';

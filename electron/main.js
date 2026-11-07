@@ -43,6 +43,8 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: 'CIKE',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    autoHideMenuBar: process.platform === 'win32',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -61,6 +63,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId('io.cike.windows');
   applyChromiumEnv();
   try {
     const requireSafeStorage = () => {

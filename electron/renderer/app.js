@@ -821,7 +821,7 @@ document.getElementById('btn-check-update').onclick = async () => {
   status.textContent = '正在检查…';
   try {
     const info = await window.lfb.checkUpdate();
-    status.textContent = info.available ? `发现新版本 ${info.latest}（当前 ${info.current}）` : `已是最新版本 ${info.current}`;
+    status.textContent = info.message || (info.available ? `发现新版本 ${info.latest}（当前 ${info.current}）` : `已是最新版本 ${info.current}`);
     document.getElementById('btn-install-update').classList.toggle('hidden', !info.available);
   } catch (e) { status.textContent = '检查失败'; toast(e.message, true); }
 };

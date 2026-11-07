@@ -24,6 +24,8 @@ function get(url, file) {
 
 async function checkUpdate() {
   const current = app.getVersion();
+  if (process.platform === 'win32') return { current, latest: current, available: false,
+    message: 'Windows 版暂不支持自动更新。请退出应用后，将新版解压到新目录；环境数据会保留。' };
   const release = JSON.parse(await get(`https://api.github.com/repos/${REPO}/releases/latest`));
   const version = release.tag_name?.replace(/^v/, '');
   if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(version)) throw new Error('更新版本格式无效');
@@ -34,6 +36,7 @@ async function checkUpdate() {
 }
 
 async function installUpdate() {
+  if (process.platform === 'win32') throw new Error('Windows 版请退出应用后，解压新版到新目录完成更新');
   if (process.platform !== 'darwin' || process.arch !== 'arm64' || !app.isPackaged) throw new Error('在线更新仅支持已安装的 Apple 芯片版 CIKE');
   const info = await checkUpdate();
   if (!info.available) return info;

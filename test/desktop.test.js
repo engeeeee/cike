@@ -81,7 +81,9 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
       if (process.env.CIKE_SCREENSHOT) await page.screenshot({ path: process.env.CIKE_SCREENSHOT });
     } finally {
       await app.evaluate(async ({ clipboard, ClipboardItem }) => {
-        const items = await Promise.all(globalThis.cikeClipboardBackup.map(async item => {
+        // Windows can report an empty ClipboardItem for an empty clipboard.
+        // Such an item cannot be reconstructed without at least one MIME type.
+        const items = await Promise.all(globalThis.cikeClipboardBackup.filter(item => item.types.length).map(async item => {
           const entries = await Promise.all(item.types.map(async type => [type, await item.getType(type)]));
           return new ClipboardItem(Object.fromEntries(entries));
         }));
