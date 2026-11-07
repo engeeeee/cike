@@ -84,7 +84,17 @@ test('native core changes hardware without replacing APIs, agrees across workers
       await page.evaluate(() => { document.cookie = 'kernel=A; path=/; max-age=3600'; localStorage.setItem('kernel', 'A'); });
       for (let count = 1; count <= 2; count++) {
         await page.evaluate(() => { const link = document.createElement('a'); link.href = '/file'; document.body.append(link); link.click(); link.remove(); });
-        await until(() => fs.readdirSync(downloads).filter(name => name.endsWith('.txt')), names => names.length === count);
+        // Firefox may reserve an empty final filename while writing its .part.
+        // Wait for completed contents, not merely the directory entry.
+        await until(() => {
+          const names = fs.readdirSync(downloads);
+          const files = names.filter(name => name.endsWith('.txt'));
+          if (names.some(name => name.endsWith('.part'))) return [];
+          return files.filter(name => {
+            try { return fs.readFileSync(path.join(downloads, name), 'utf8') === 'native-download-fixture'; }
+            catch (error) { if (['EBUSY', 'EACCES', 'ENOENT'].includes(error.code)) return false; throw error; }
+          });
+        }, names => names.length === count);
       }
       for (const name of fs.readdirSync(downloads).filter(name => name.endsWith('.txt'))) assert.equal(fs.readFileSync(path.join(downloads, name), 'utf8'), 'native-download-fixture');
       await manager.open(b.id, { headless: true });
