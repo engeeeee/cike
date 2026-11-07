@@ -10,24 +10,24 @@ name: Publish Windows Release
         description: Successful Windows build run ID
         type: string
         required: true
-        default: '42360719290'
+        default: '42367043853'
       tag:
         description: Windows release tag
         type: string
         required: true
-        default: v0.7.0-windows.1
+        default: v0.7.1-windows.1
 
 permissions:
   actions: read
   contents: write
 
 concurrency:
-  group: windows-release-${{ inputs.tag || 'v0.7.0-windows.1' }}
+  group: windows-release-${{ inputs.tag || 'v0.7.1-windows.1' }}
   cancel-in-progress: false
 
 env:
-  SOURCE_RUN: ${{ inputs.source_run || '42360719290' }}
-  RELEASE_TAG: ${{ inputs.tag || 'v0.7.0-windows.1' }}
+  SOURCE_RUN: ${{ inputs.source_run || '42367043853' }}
+  RELEASE_TAG: ${{ inputs.tag || 'v0.7.1-windows.1' }}
 
 jobs:
   release:
@@ -106,7 +106,9 @@ jobs:
             - 下载 `${{ steps.source.outputs.filename }}`，完整解压后双击 `CIKE.exe`；首次在「设置」下载 Chromium。
             - 数据默认保存在 `%LOCALAPPDATA%\CIKE`，程序更新时保留。
 
-            已通过 Windows CI 的浏览器与 API 回归、内核安装、数据持久化、源码桌面测试和打包后的应用启动测试：[验证记录](${{ steps.source.outputs.build_url }})。
+            本版修复浏览器窗口：新环境默认最大化；手动 F11 全屏后，新窗口、新环境与重启后均沿用选择。可在「设置 → 浏览器窗口」切换打开方式，页面大小随实际窗口变化。
+
+            已通过 Windows CI 的浏览器与 API 回归、原生窗口及全屏继承、内核安装、数据持久化、源码桌面测试和打包后的应用启动测试：[验证记录](${{ steps.source.outputs.build_url }})。
 
             这是独立 Windows 移植版，未签名，更新需手动替换。校验文件见 `SHA256SUMS.txt`。
       - name: Publish the completed release
