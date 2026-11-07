@@ -7,7 +7,7 @@ const { nativeAsset, nativeMarker, nativeExecutable, BUILD } = require('../src/n
 const { extractBrowserZip } = require('../src/zip');
 const { writePrivate } = require('../src/privatefiles');
 const { downloadFile } = require('./chromium');
-const { NativeStorage } = require('../src/native-storage');
+const { NativeStorage, renameKernel } = require('../src/native-storage');
 const pending = new Map();
 async function verifyNativeExecutable(executable) {
   const version = fs.readFileSync(path.join(path.dirname(executable), 'application.ini'), 'utf8').match(/^Version=(.+)$/m)?.[1].trim();
@@ -41,7 +41,7 @@ async function install(dir, onProgress) {
     // Probe the exact pinned Juggler/Playwright pair before publishing the marker.
     await verifyNativeExecutable(executable);
     const destination = path.join(root, `camoufox-${BUILD}-${path.basename(staging).slice(-6)}`);
-    fs.renameSync(staging, destination);
+    await renameKernel(staging, destination);
     const final = path.join(destination, basename);
     storage.register(destination, BUILD);
     writePrivate(nativeMarker(dir), final + '\n');

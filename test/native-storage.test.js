@@ -66,6 +66,22 @@ test('failed startup validation rolls back the marker, directory and environment
   assert.equal(fs.readFileSync(f.cookie, 'utf8'), 'login-fixture');
 });
 
+test('a transient Windows sharing violation after the startup probe is retried before switching locations', async t => {
+  const f = fixture(t), source = f.bundle(); f.storage.select(path.join(source, binary));
+  const rename = fs.promises.rename; let failures = 0;
+  fs.promises.rename = async (from, to) => {
+    if (path.basename(from).startsWith('camoufox-copy-') && failures++ === 0) throw Object.assign(new Error('transient-sharing-violation'), { code: 'EPERM' });
+    return rename(from, to);
+  };
+  try {
+    const result = await f.storage.changeRoot(path.join(f.dir, 'retry-target'));
+    assert.equal(result.moved, true); assert.equal(f.storage.markerValue(), result.executable);
+    assert.ok(fs.existsSync(path.join(source, binary)));
+    assert.equal(fs.readFileSync(f.cookie, 'utf8'), 'login-fixture');
+    assert.equal(failures, 2);
+  } finally { fs.promises.rename = rename; }
+});
+
 test('rejects profile directories, self-copying paths and links resolving into profiles', async t => {
   const f = fixture(t), source = f.bundle(); await f.storage.status();
   assert.throws(() => f.storage.validateRoot(path.dirname(f.cookie)), /环境数据/);

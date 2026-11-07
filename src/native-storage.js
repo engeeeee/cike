@@ -37,6 +37,17 @@ async function digest(filename) {
   return hash.digest('hex');
 }
 function report(callback, value) { try { callback?.(value); } catch { /* A closed settings window cannot interrupt a file transaction. */ } }
+async function renameKernel(from, to) {
+  // Windows/antivirus can retain handles briefly after Firefox has exited.
+  // Retry only transient sharing/access errors; never replace an existing copy.
+  for (let attempt = 0; ; attempt++) {
+    try { await fs.promises.rename(from, to); return; }
+    catch (error) {
+      if (attempt >= 20 || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+}
 
 class NativeStorage {
   constructor(dataDir, { verify, environment = process.env } = {}) {
@@ -166,7 +177,7 @@ class NativeStorage {
       if (!this.verify) throw new Error('缺少内核启动验证器');
       await this.verify(path.join(staging, binary));
       target = path.join(root, `camoufox-${BUILD}-${crypto.randomBytes(3).toString('hex')}`);
-      fs.renameSync(staging, target);
+      await renameKernel(staging, target);
       const added = { id: crypto.randomBytes(16).toString('hex'), directory: target, version: BUILD, state: 'ready' };
       writeJSON(path.join(target, OWNER), { owner: 'CIKE.Camoufox', id: added.id });
       this.save({ ...original, root, entries: [...original.entries, added] });
@@ -183,7 +194,7 @@ class NativeStorage {
       else this.environment.CIKE_CAMOUFOX_EXECUTABLE = beforeEnvironment;
       throw error;
     } finally {
-      if (!committed) await fs.promises.rm(target, { recursive: true, force: true });
+      if (!committed) await fs.promises.rm(target, { recursive: true, force: true, maxRetries: 6, retryDelay: 300 });
     }
   }
   async deletionPlan(id) {
@@ -205,12 +216,12 @@ class NativeStorage {
       if (entry.current || entry.selected) this.select(fallback ? path.join(fallback.directory, binary) : '', path.join(entry.directory, binary));
       if (entry.exists && entry.state !== 'deleting') {
         target = path.join(path.dirname(entry.directory), 'camoufox-delete-' + entry.id);
-        fs.renameSync(entry.directory, target); renamed = true;
+        await renameKernel(entry.directory, target); renamed = true;
       }
       const pending = { ...original.entries.find(item => item.id === id), directory: target, state: 'deleting' };
       this.save({ ...original, entries: original.entries.map(item => item.id === id ? pending : item) });
     } catch (error) {
-      if (renamed) fs.renameSync(target, entry.directory);
+      if (renamed) await renameKernel(target, entry.directory);
       if (entry.current || entry.selected) {
         if (marker) writePrivate(nativeMarker(this.dataDir), marker + '\n');
         else fs.rmSync(nativeMarker(this.dataDir), { force: true });
@@ -231,4 +242,4 @@ class NativeStorage {
   }
 }
 
-module.exports = { NativeStorage, binary, inventory };
+module.exports = { NativeStorage, binary, inventory, renameKernel };
