@@ -5,6 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { startBackend } = require('../src/server');
 async function until(read, predicate) {
   for (let n = 0; n < 160; n++) { const value = await read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 100)); }
@@ -28,7 +30,14 @@ test('Camoufox native windows default to maximized and inherit manual F11 into p
       const b = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native', locale: 'en-US', timezone: 'UTC', proxy: { server: `http://127.0.0.1:${proxy.address().port}` } });
       await manager.open(a.id); const context = manager.getContext(a.id), page = context.pages()[0];
       await until(() => page.evaluate(() => Math.abs(outerWidth - screen.availWidth) <= 20 && Math.abs(outerHeight - screen.availHeight) <= 20), Boolean);
-      await page.keyboard.press('F11');
+      // Firefox's automation keyboard dispatches into content, not the browser
+      // chrome. Send the actual Windows shortcut to this browser's process.
+      const pid = context._connection.toImpl(context)._browser.options.browserProcess.process.pid;
+      assert.ok(Number.isSafeInteger(pid));
+      const script = ['$cikeShell = New-Object -ComObject WScript.Shell',
+        `if (-not $cikeShell.AppActivate(${pid})) { throw 'Could not focus the native test browser' }`,
+        'Start-Sleep -Milliseconds 300', '$cikeShell.SendKeys("{F11}")'].join('\n');
+      await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 10000 });
       await until(() => backend.settings.get().browserWindowState, state => state === 'fullscreen');
       await until(() => full(page), Boolean);
       const popupPromise = context.waitForEvent('page');
