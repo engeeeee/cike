@@ -28,6 +28,10 @@ function generateHardware() {
     gpuPreset, canvasNoise: true, audioNoise: true, fingerprintSeed: crypto.randomBytes(16).toString('hex') };
 }
 function completeHardware(profile, patch = {}) {
+  if (profile.fingerprintMode === 'kernel') return { ...profile,
+    hardwareConcurrency: profile.hardwareConcurrency ?? 8, deviceMemory: null,
+    gpuPreset: profile.gpuPreset || 'native', canvasNoise: false, audioNoise: false,
+    fingerprintSeed: profile.fingerprintSeed || crypto.randomBytes(16).toString('hex') };
   if (profile.fingerprintMode !== 'hardware') return profile;
   return { ...profile, hardwareConcurrency: profile.hardwareConcurrency ?? 8, deviceMemory: profile.deviceMemory ?? 8,
     gpuPreset: profile.gpuPreset && profile.gpuPreset !== 'native' ? profile.gpuPreset : (Object.hasOwn(patch, 'gpuPreset') ? patch.gpuPreset : 'intel-uhd-630'),
@@ -48,4 +52,4 @@ function hardwareConfig(profile) {
     gpu: GPU_PRESETS[profile.gpuPreset], canvasNoise: profile.canvasNoise, audioNoise: profile.audioNoise,
     seed: [0, 8, 16, 24].map(offset => parseInt(profile.fingerprintSeed.slice(offset, offset + 8), 16) >>> 0) };
 }
-module.exports = { GPU_PRESETS, hardwareOptions, generateHardware, completeHardware, validateHardware, hardwareConfig };
+module.exports = { GPU_PRESETS, CPU_VALUES, hardwareOptions, generateHardware, completeHardware, validateHardware, hardwareConfig };

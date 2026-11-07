@@ -54,7 +54,7 @@
   <!-- 主区 -->
   <main class="main">
     <div id="browser-banner" class="banner hidden">
-      <span>尚未下载 Chromium 内核，环境无法打开。下载约 170 MB，只需一次。</span>
+      <span>尚未下载 Chromium：原生一致/软件模拟需此内核。内核模拟可在设置中单独下载 Camoufox。</span>
       <button id="btn-banner-download" class="btn small">立即下载</button>
     </div>
 
@@ -72,7 +72,7 @@
             </div>
           </div>
           <div class="field-row">
-            <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致或硬件模拟。</p></div>
+            <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致、内核模拟或软件模拟。</p></div>
             <div class="field"><label>分辨率</label><select id="n-vp" class="input"></select></div>
           </div>
         </div>
@@ -148,6 +148,13 @@
           <div id="browser-progress" class="progress hidden"><div class="bar"></div></div>
           <div class="row"><button id="btn-download-browser" class="btn primary">下载 Chromium</button></div>
           <p class="hint">按本版本锁定的 Playwright 版本下载匹配内核，保存在 CIKE 数据目录中；更新内核后重新打开环境生效。</p>
+        </div>
+        <div class="card">
+          <h2>Camoufox 指纹内核</h2>
+          <div id="native-status" class="kv">检测中…</div>
+          <div id="native-progress" class="progress hidden"><div class="bar"></div></div>
+          <div class="row"><button id="btn-download-native" class="btn primary">下载指纹内核</button></div>
+          <p class="hint">约 1.3 GB，解压后约 2.6 GB。用于“内核模拟”：在 Firefox 内核中设置 CPU 和显卡标识，保留原生 Canvas/音频。Chrome 与 Firefox 的站点数据分别保存，切换时需要重新登录。</p>
         </div>
         <div class="card">
           <h2>网络</h2>

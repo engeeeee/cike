@@ -64,7 +64,7 @@ class ProfileStore {
     const old = this.get(id);
     if (!old) return null;
     let next = { ...old, ...pick(patch), updatedAt: new Date().toISOString() };
-    if (old.fingerprintMode === 'legacy' && ['native', 'hardware'].includes(patch.fingerprintMode)) {
+    if (old.fingerprintMode === 'legacy' && ['native', 'hardware', 'kernel'].includes(patch.fingerprintMode)) {
       // Keep non-secret former fingerprint settings for reference. Never put
       // proxy credentials into a second unencrypted copy.
       const keys = ['platform', 'userAgent', 'canvasSeed', 'canvasNoise', 'hardwareConcurrency', 'deviceMemory', 'webrtc'];

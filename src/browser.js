@@ -1,5 +1,9 @@
 'use strict';
 const net = require('net');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
 const { chromium } = require('playwright');
 const { buildContextOptions, webrtcArgs, validateProfile } = require('./fingerprint');
 const { resolveProxy, inlineRecord } = require('./proxyconfig');
@@ -35,6 +39,7 @@ class BrowserManager {
     this.startPage = options.startPage !== false;
     this.profileIcons = options.profileIcons !== false;
     this.windowStates = new WindowStateManager(settings);
+    this.windowTokens = new Map();
   }
   isOpen(id) { return this.sessions.has(id) || this.opening.has(id); }
   listOpen() {
@@ -91,7 +96,7 @@ class BrowserManager {
     // With no configured proxy, auto means native system locale/timezone;
     // no geolocation request, and no invented America/New_York fallback.
     let proxy = proxyRecord ? ProxyStore.toPlaywright(proxyRecord) : null;
-    let forwarder, context;
+    let forwarder, context, windowToken;
     try {
       if (proxyRecord?.type === 'socks5' && (proxyRecord.username || proxyRecord.password || useSystemProxy)) {
         const { SocksForwarder } = require('./socksfwd');
@@ -99,8 +104,10 @@ class BrowserManager {
         forwarder = await SocksForwarder.start({ ...proxyRecord, systemProxy });
         proxy = { server: `http://127.0.0.1:${forwarder.port}`, bypass: '<-loopback>' };
       } else if (proxy) proxy.bypass = '<-loopback>';
+      const kernel = profile.fingerprintMode === 'kernel';
+      if (kernel && process.env.LFB_EXPOSE_DEBUGGER === '1') throw new Error('Camoufox 使用 Firefox 协议，不提供 Chromium CDP 调试端口');
       const { options } = buildContextOptions({ ...effective, proxy });
-      const debugPort = process.env.LFB_EXPOSE_DEBUGGER === '1' ? await findFreePort(4550, 4599) : null;
+      const debugPort = !kernel && process.env.LFB_EXPOSE_DEBUGGER === '1' ? await findFreePort(4550, 4599) : null;
       const launchOptions = { ...options, headless, chromiumSandbox: true,
         ignoreDefaultArgs: ['--enable-automation'],
         args: ['--no-first-run', '--no-default-browser-check', '--site-per-process', '--disable-background-mode',
@@ -110,7 +117,7 @@ class BrowserManager {
           ...webrtcArgs({ ...effective, proxy: proxy || useSystemProxy || profile.webrtc === 'auto' }),
         ],
       };
-      if (!headless && process.platform === 'win32') {
+      if (!kernel && !headless && process.platform === 'win32') {
         await this.windowStates.capture();
         const state = this.windowStates.desired();
         launchOptions.viewport = null;
@@ -122,21 +129,46 @@ class BrowserManager {
       // alter proxy routing or invalidate the native consistency contract.
       if (process.env.LFB_CHROMIUM_EXECUTABLE) launchOptions.executablePath = process.env.LFB_CHROMIUM_EXECUTABLE;
       checkCancelled();
-      if (!headless && this.profileIcons) {
+      if (!kernel && !headless && this.profileIcons) {
         launchOptions.executablePath = await require('./profileapp').ensureProfileApp(this.store.dataDir, profile, launchOptions.executablePath || chromium.executablePath());
         checkCancelled();
       }
-      const directory = this.store.profileDir(id);
+      const directory = kernel ? path.join(this.store.profileDir(id), 'firefox') : this.store.profileDir(id);
       privateDirectory(directory);
-      await prepareDownloads(directory, this.downloadsDirectory);
-      context = await chromium.launchPersistentContext(directory, launchOptions);
+      if (kernel) {
+        const downloadsDirectory = this.downloadsDirectory || path.join(os.homedir(), 'Downloads');
+        await fs.promises.mkdir(downloadsDirectory, { recursive: true });
+        let bridge;
+        if (!headless) {
+          if (!this.localAPIUrl) throw new Error('指纹内核窗口管理需要通过 CIKE 本地服务启动');
+          windowToken = crypto.randomBytes(24).toString('hex');
+          this.windowTokens.set(windowToken, { profileId: id, ready: false });
+          const endpoint = new URL('api/browserWindows', this.localAPIUrl);
+          // A private .localhost capability host lets the control extension
+          // reach CIKE without bypassing the proxy for ordinary localhost URLs.
+          endpoint.hostname = windowToken + '.localhost';
+          bridge = { url: endpoint.href, token: windowToken };
+        }
+        context = await require('./native-runtime').launchNative({ dataDir: this.store.dataDir, directory, profile: effective, proxy, headless, downloadsDirectory, bridge });
+        if (bridge) {
+          const deadline = Date.now() + 20000;
+          while (!this.windowTokens.get(windowToken)?.ready) {
+            checkCancelled();
+            if (Date.now() > deadline) throw new Error('指纹内核窗口组件未能连接，请重试');
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+      } else {
+        await prepareDownloads(directory, this.downloadsDirectory);
+        context = await chromium.launchPersistentContext(directory, launchOptions);
+      }
       if (profile.fingerprintMode === 'hardware') await require('./hardware-runtime').installHardwareContext(context, profile);
-      if (!headless && process.platform === 'win32') await this.windowStates.attach(context);
-      await configureDownloads(context);
+      if (!kernel && !headless && process.platform === 'win32') await this.windowStates.attach(context);
+      if (!kernel) await configureDownloads(context);
       checkCancelled();
       const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network };
       this.sessions.set(id, session);
-      context.on('close', () => { if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); });
+      context.on('close', () => { if (windowToken) this.windowTokens.delete(windowToken); if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); });
       const watchPage = page => page.on('close', () => {
         // macOS leaves Chromium alive after its final window closes. Closing
         // the persistent context terminates only this environment's process.
@@ -154,6 +186,7 @@ class BrowserManager {
       return { profile_id: id, open: true, reused: false, headless, network,
         ...(debugPort ? { debug_url: `http://127.0.0.1:${debugPort}` } : {}) };
     } catch (error) {
+      if (windowToken) this.windowTokens.delete(windowToken);
       await context?.close().catch(() => {});
       await forwarder?.stop().catch(() => {});
       // Playwright launch errors include argv, but proxy credentials are not

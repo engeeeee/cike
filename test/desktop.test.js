@@ -8,7 +8,7 @@ const { _electron } = require('playwright');
 const { ProfileStore } = require('../src/store');
 const { ProxyStore } = require('../src/proxystore');
 
-test('sandboxed desktop UI can authenticate, migrate profiles and protect secrets with safeStorage', { timeout: 60000 }, async () => {
+test('sandboxed desktop UI can authenticate, migrate profiles and protect secrets with safeStorage', { timeout: 120000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-desktop-'));
   if (process.env.LFB_CHROMIUM_EXECUTABLE) {
     fs.mkdirSync(path.join(dir, 'browsers'));
@@ -120,6 +120,24 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
         if (items.length) await clipboard.write(items); else clipboard.clear();
         delete globalThis.cikeClipboardBackup;
       });
+    }
+    await page.getByRole('button', { name: '新建环境', exact: true }).click();
+    await page.locator('#n-fingerprint-mode').selectOption('kernel');
+    assert.equal(await page.locator('#n-hardware-cpu').isVisible(), true);
+    assert.equal(await page.locator('#n-software-noise').isVisible(), false);
+    assert.equal(await page.locator('#n-software-memory').isVisible(), false);
+    await page.locator('#n-hardware-cpu').selectOption('4');
+    await page.locator('#n-hardware-gpu').selectOption('native');
+    await page.locator('#n-save').click();
+    await page.getByText('环境已创建', { exact: true }).waitFor();
+    const kernel = Object.values(JSON.parse(fs.readFileSync(profiles.file))).find(record => record.fingerprintMode === 'kernel');
+    assert.equal(kernel.hardwareConcurrency, 4); assert.equal(kernel.deviceMemory, null); assert.equal(kernel.canvasNoise, false); assert.equal(kernel.audioNoise, false);
+    const kernelCard = page.locator('.env-card').filter({ has: page.locator('.name', { hasText: /^3$/ }) });
+    if (process.env.CIKE_CAMOUFOX_EXECUTABLE) {
+      await kernelCard.locator('[data-act="open"]').click();
+      await kernelCard.getByText('运行中', { exact: true }).waitFor({ timeout: 40000 });
+      await kernelCard.locator('[data-act="close"]').click();
+      await kernelCard.getByText('已关闭', { exact: true }).waitFor();
     }
   } finally { await app?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

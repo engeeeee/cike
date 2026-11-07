@@ -47,7 +47,7 @@ async function chromiumStatus(dir) {
   } catch { /* not installed or unusable */ }
   return { installed: false, executable: null, version: null, targetVersion, updateAvailable: true };
 }
-async function downloadFile(url, dest, onProgress, redirects = 0) {
+async function downloadFile(url, dest, onProgress, redirects = 0, maxBytes = 1024 * 1024 * 1024) {
   if (redirects > 5 || new URL(url).protocol !== 'https:') throw new Error('内核下载必须使用 HTTPS，且不能无限重定向');
   const response = await new Promise((resolve, reject) => {
     const req = https.get(url, { headers: { 'User-Agent': 'CIKE' } }, resolve);
@@ -56,14 +56,14 @@ async function downloadFile(url, dest, onProgress, redirects = 0) {
   });
   if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
     response.resume();
-    return downloadFile(new URL(response.headers.location, url).href, dest, onProgress, redirects + 1);
+    return downloadFile(new URL(response.headers.location, url).href, dest, onProgress, redirects + 1, maxBytes);
   }
   if (response.statusCode !== 200) { response.resume(); throw new Error(`内核下载失败：HTTP ${response.statusCode}`); }
   const total = Number(response.headers['content-length']) || 0;
   let done = 0;
   response.on('data', chunk => {
     done += chunk.length;
-    if (done > 1024 * 1024 * 1024) response.destroy(new Error('内核安装包异常过大'));
+    if (done > maxBytes) response.destroy(new Error('内核安装包异常过大'));
     onProgress?.({ done, total, pct: total ? Math.round(done / total * 100) : 0 });
   });
   await pipeline(response, fs.createWriteStream(dest, { flags: 'wx', mode: 0o600 }));
@@ -115,4 +115,4 @@ async function downloadChromium(dir, onProgress) {
   inProgress.set(dir, promise);
   try { return await promise; } finally { inProgress.delete(dir); }
 }
-module.exports = { chromiumStatus, downloadChromium, downloadUrl, executableMarker, browserRoot, browserVersion, findExecutable, cftPlatform };
+module.exports = { chromiumStatus, downloadChromium, downloadUrl, executableMarker, browserRoot, browserVersion, findExecutable, cftPlatform, downloadFile };

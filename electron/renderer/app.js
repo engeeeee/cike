@@ -10,7 +10,7 @@ const LOCALES = ['auto', 'zh-CN', 'en-US', 'en-GB', 'de-DE', 'fr-FR', 'ja-JP'];
 
 const selectedProfiles = new Set(), selectedProxies = new Set();
 let batchBusy = false;
-const state = { profiles: [], proxies: [], chromium: null, page: 'profiles', activeGroup: '', profilePage: 0, proxyPage: 0 };
+const state = { profiles: [], proxies: [], chromium: null, nativeCore: null, page: 'profiles', activeGroup: '', profilePage: 0, proxyPage: 0 };
 
 function apiBase() { return (window.lfb?.apiBase || '').replace(/\/$/, ''); }
 function token() { return window.lfb?.token || ''; }
@@ -180,7 +180,7 @@ async function saveNewProfile(openAfter = false) {
   try {
     const r = await api('/api/profiles', { method: 'POST', body: JSON.stringify(spec) });
     const seed = document.getElementById('n-fingerprint-seed');
-    if (seed) { seed.value = ''; document.getElementById('n-hardware-id').textContent = '保存时生成固定指纹编号'; }
+    if (seed) { seed.value = ''; document.getElementById('n-hardware-id').textContent = '保存时生成固定配置编号'; }
     toast('环境已创建');
     // Reset form
     await loadProfiles();
@@ -201,11 +201,14 @@ async function saveNewProfile(openAfter = false) {
 async function openProfileWithCheck(profileId) {
   const p = state.profiles.find((x) => x.id === profileId);
   if (!p) { toast('环境不存在', true); return; }
-  if (!state.chromium?.installed) {
+  if (p.fingerprintMode === 'kernel') {
+    state.nativeCore = await window.lfb.nativeStatus();
+    if (!state.nativeCore.installed) { toast('请先在“设置 → Camoufox 指纹内核”下载内核', true); showPage('settings'); return; }
+  } else if (!state.chromium?.installed) {
     toast('请先在“设置”里下载 Chromium 内核', true);
     return;
   }
-  if (!['native', 'hardware'].includes(p.fingerprintMode)) { toast('请先在编辑中转换旧环境；站点数据会保留', true); return; }
+  if (!['native', 'hardware', 'kernel'].includes(p.fingerprintMode)) { toast('请先在编辑中转换旧环境；站点数据会保留', true); return; }
   if (p.proxyId || p.proxy) toast('正在验证代理，失败将阻止打开…');
   try {
     await api('/api/openBrowser', { method: 'POST', body: JSON.stringify({ profile_id: profileId }) });
@@ -279,7 +282,7 @@ function renderProfiles() {
           <div class="environment-title"><div class="name">${esc(p.name)}</div><span class="environment-group" title="${esc(p.group || '未分组')}">${esc(p.group || '未分组')}</span></div>
           <div class="environment-state">
             <span class="pill ${p.open ? 'open' : 'closed'}">${p.phase === 'opening' ? '启动中' : p.phase === 'closing' ? '关闭中' : p.open ? '运行中' : '已关闭'}</span>
-            <span class="environment-mode">${p.fingerprintMode === 'hardware' ? '硬件模拟' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
+            <span class="environment-mode">${p.fingerprintMode === 'kernel' ? '内核模拟 · Firefox' : p.fingerprintMode === 'hardware' ? '硬件模拟 · 软件层' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
           </div>
         </div>
         <div class="environment-network">
@@ -404,9 +407,9 @@ function openProfileModal(existing) {
     <div class="field"><label>名称</label><input id="f-name" class="input" value="${esc(p.name || '')}" placeholder="例如：店铺-01"></div>
     <div class="field-row">
       <div class="field"><label>分组</label><input id="f-group" class="input" list="f-group-list" value="${esc(p.group || '')}" placeholder="选填，可选已有或输入新的"><datalist id="f-group-list">${[...new Set(state.profiles.map((x) => x.group).filter(Boolean))].sort().map((g) => `<option value="${esc(g)}">`).join('')}</datalist></div>
-      <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致或硬件模拟，重开环境生效。</p></div>
+      <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致、内核模拟或软件模拟，重开环境生效。</p></div>
     </div>
-    ${isEdit && !['native', 'hardware'].includes(p.fingerprintMode) ? '<p class="hint">旧环境已暂停启动。转换会更新指纹配置，保留 Cookie、站点数据、代理及窗口设置。原指纹配置会留存备查。</p><label><input id="f-convert" type="checkbox"> 我已了解指纹会改变，同意转换环境</label>' : ''}
+    ${isEdit && !['native', 'hardware', 'kernel'].includes(p.fingerprintMode) ? '<p class="hint">旧环境已暂停启动。转换会更新指纹配置，保留 Cookie、站点数据、代理及窗口设置。原指纹配置会留存备查。</p><label><input id="f-convert" type="checkbox"> 我已了解指纹会改变，同意转换环境</label>' : ''}
     <div class="field"><label>代理</label>
       <div style="display:flex;gap:8px">
         <select id="f-proxy" class="input" style="flex:1">${proxyOptionsHtml(p.proxyId || (p.proxy ? '__custom' : ''))}</select>
@@ -497,7 +500,7 @@ function openProfileModal(existing) {
     };
     body.querySelector('#m-cancel').onclick = close;
     body.querySelector('#m-save').onclick = async () => {
-      if (isEdit && !['native', 'hardware'].includes(p.fingerprintMode) && !body.querySelector('#f-convert').checked) { toast('请先确认转换说明', true); return; }
+      if (isEdit && !['native', 'hardware', 'kernel'].includes(p.fingerprintMode) && !body.querySelector('#f-convert').checked) { toast('请先确认转换说明', true); return; }
       const name = body.querySelector('#f-name').value.trim();
       if (!name) { toast('请填写名称', true); return; }
       const [vw, vh] = body.querySelector('#f-vp').value.split('x').map(Number);
@@ -765,6 +768,32 @@ async function loadSettings() {
       `<div><strong>${esc(name)}</strong> ${esc(version)}</div><div class="sub">本地环境 · 本地代理 · 无厂商后端</div>`;
   } catch { /* ignore */ }
   await refreshChromiumStatus();
+  await refreshNativeStatus();
+}
+
+async function refreshNativeStatus() {
+  const status = document.getElementById('native-status'), button = document.getElementById('btn-download-native');
+  try {
+    state.nativeCore = await window.lfb.nativeStatus();
+    status.textContent = state.nativeCore.installed ? '已安装 Camoufox ' + state.nativeCore.version : '尚未安装；原生一致/软件模拟仍使用 Chromium';
+    button.disabled = state.nativeCore.installed;
+    button.textContent = state.nativeCore.installed ? '指纹内核已安装' : '下载指纹内核';
+  } catch (error) { status.textContent = error.message; }
+}
+async function startNativeDownload() {
+  const button = document.getElementById('btn-download-native'), progress = document.getElementById('native-progress');
+  button.disabled = true; progress.classList.remove('hidden');
+  window.lfb.onNativeProgress(value => {
+    progress.querySelector('.bar').style.width = (value.pct || 0) + '%';
+    document.getElementById('native-status').textContent = value.phase || `正在下载：${value.pct || 0}%`;
+  });
+  try {
+    const result = await window.lfb.nativeDownload();
+    if (!result.ok) throw new Error(result.error);
+    toast('指纹内核安装完成');
+  } catch (error) { toast('安装失败：' + error.message, true); }
+  progress.classList.add('hidden'); button.disabled = false;
+  await refreshNativeStatus();
 }
 
 async function refreshChromiumStatus() {
@@ -816,6 +845,7 @@ document.getElementById('btn-search').onclick = () => {
   document.getElementById('profile-search').focus();
 };
 document.getElementById('btn-download-browser').onclick = startChromiumDownload;
+document.getElementById('btn-download-native').onclick = startNativeDownload;
 document.getElementById('btn-save-proxy-route').onclick = async () => {
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ socksViaSystemProxy: document.getElementById('set-socks-system-proxy').value === 'yes' }) });
