@@ -5,7 +5,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const cp = require('child_process');
 const { ProfileStore } = require('../src/store');
 const { BrowserManager } = require('../src/browser');
 
@@ -69,7 +68,7 @@ test('native fingerprints agree across realms, sandbox stays enabled and five st
     assert.deepEqual(await storage(page, true), expected);
     const service = await page.evaluate(async () => { const reg = await navigator.serviceWorker.ready; return new Promise(resolve => { const ch = new MessageChannel(); ch.port1.onmessage = e => resolve(e.data); reg.active.postMessage('probe', [ch.port2]); }); });
     assert.deepEqual(service, main);
-    const lines = cp.execFileSync('ps', ['-axo', 'command='], { encoding: 'utf8' }).split('\n').filter(l => l.includes('--user-data-dir=' + store.profileDir(a.id)));
+    const lines = require('./processes').processCommands().split(/\r?\n/).filter(l => l.includes('--user-data-dir=' + store.profileDir(a.id)));
     assert.ok(lines.length); assert.ok(lines.every(l => !l.includes('--no-sandbox') && !l.includes('--remote-debugging-port')));
     assert.ok(lines.some(l => l.includes('--site-per-process')));
     assert.ok(lines.some(l => l.includes('disable_non_proxied_udp')));
