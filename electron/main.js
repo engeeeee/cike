@@ -12,7 +12,9 @@ const fs = require('fs');
 const { startBackend, DATA_DIR } = require('../src/server');
 const { chromiumStatus, downloadChromium, executableMarker } = require('./chromium');
 const { checkUpdate, installUpdate } = require('./updater');
-const { nativeStatus, downloadNative } = require('./nativecore');
+const { nativeStatus, downloadNative, verifyNativeExecutable } = require('./nativecore');
+const { NativeStorage } = require('../src/native-storage');
+const nativeStorage = new NativeStorage(DATA_DIR, { verify: verifyNativeExecutable });
 
 let backend = null;
 let mainWindow = null;
@@ -96,7 +98,9 @@ app.on('before-quit', event => {
   if (quitting || !backend) return;
   event.preventDefault();
   quitting = true;
-  backend.browsers.closeAll().finally(() => { backend.server.close(); app.quit(); });
+  backend.browsers.shuttingDown = true;
+  Promise.resolve(backend.browsers.kernelTask).catch(() => {}).then(() => backend.browsers.closeAll())
+    .finally(() => { backend.server.close(); app.quit(); });
 });
 
 // --- renderer IPC ---
@@ -108,24 +112,68 @@ handle('chromium-status', async () => {
   return chromiumStatus(DATA_DIR);
 });
 handle('native-status', () => nativeStatus(DATA_DIR));
-handle('native-download', async event => {
-  if (backend.browsers.listOpen().length || backend.browsers.opening.size) throw new Error('请先关闭所有环境再更新内核');
+function progressSender(event, channel) {
+  return value => { if (!event.sender.isDestroyed()) event.sender.send(channel, value); };
+}
+async function manageKernel(operation) {
+  try { return await backend.browsers.manageKernel(operation); }
+  catch (error) { return { ok: false, error: error.message }; }
+}
+handle('native-storage-status', async () => ({ ...await nativeStorage.status(),
+  inUse: !!(backend.browsers.sessions.size || backend.browsers.opening.size || backend.browsers.closing.size),
+  busy: !!backend.browsers.kernelMaintenance,
+}));
+handle('native-storage-change', event => manageKernel(async () => {
+  const status = await nativeStorage.status();
+  const chosen = await dialog.showOpenDialog(mainWindow, { title: '选择 Camoufox 内核保存位置', defaultPath: status.root,
+    properties: ['openDirectory', 'createDirectory'] });
+  if (chosen.canceled || !chosen.filePaths[0]) return { ok: true, canceled: true };
+  const root = nativeStorage.validateRoot(chosen.filePaths[0]);
+  const current = status.entries.find(entry => entry.current && entry.compatible);
+  const confirmation = await dialog.showMessageBox(mainWindow, { type: 'question', title: '更改内核位置',
+    message: current ? '复制并验证内核后切换到新位置？' : '将后续内核下载保存到此位置？',
+    detail: `${current ? '当前位置：' + current.directory + '\n' : ''}保存位置：${root}\n\n` +
+      (current ? '需要约 ' + (current.bytes / 1024 ** 3).toFixed(2) + ' GB 可用空间。校验和试启动成功后才会切换，旧副本保留，可稍后在列表中删除。' :
+        (status.external ? '当前使用环境变量指定的外部内核，本操作仅更改后续下载位置，不移动外部文件。' : '尚无可迁移的内核。下次下载会使用所选位置。')) +
+      '\n环境、Cookie 和登录数据保持不变。',
+    buttons: ['取消', '确认'], defaultId: 0, cancelId: 0 });
+  if (confirmation.response !== 1) return { ok: true, canceled: true };
+  return { ok: true, ...await nativeStorage.changeRoot(root, progressSender(event, 'native-storage-progress')) };
+}));
+handle('native-storage-remove', (_event, id) => manageKernel(async () => {
+  if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) throw new Error('无效的内核记录');
+  const plan = await nativeStorage.deletionPlan(id);
+  const confirmation = await dialog.showMessageBox(mainWindow, { type: 'warning', title: '删除 Camoufox 内核',
+    message: plan.needsDownload ? '卸载当前内核？再次使用“内核模拟”需要重新下载。' : '删除这份内核文件？',
+    detail: plan.entry.directory + '\n\n' + (plan.fallback ? '会先切换到已通过启动验证的另一份内核。\n' : '') +
+      '仅删除这份内核文件，保留环境配置、Cookie、登录数据和其他文件。',
+    buttons: ['取消', plan.needsDownload ? '卸载内核' : '删除'], defaultId: 0, cancelId: 0 });
+  if (confirmation.response !== 1) return { ok: true, canceled: true };
+  return { ok: true, ...await nativeStorage.remove(id) };
+}));
+handle('native-storage-open', async (_event, id) => {
   try {
-    const executable = await downloadNative(DATA_DIR, progress => event.sender.send('native-download-progress', progress));
-    return { ok: true, executable };
+    const status = await nativeStorage.status();
+    const directory = id === 'root' ? status.root : id === 'current' ? path.dirname(status.current || '') : status.entries.find(entry => entry.id === id)?.directory;
+    if (!directory || (id === 'current' && !status.current) || !fs.statSync(directory).isDirectory()) throw new Error('目录不存在');
+    const error = await shell.openPath(directory); if (error) throw new Error(error);
+    return { ok: true };
   } catch (error) { return { ok: false, error: error.message }; }
+});
+handle('native-download', async event => {
+  return manageKernel(async () => {
+    const executable = await downloadNative(DATA_DIR, progressSender(event, 'native-download-progress'));
+    return { ok: true, executable };
+  });
 });
 
 handle('chromium-download', async (event) => {
-  if (backend.browsers.listOpen().length || backend.browsers.opening.size) throw new Error('请先关闭所有环境再更新内核');
-  const send = (p) => event.sender.send('chromium-download-progress', p);
-  try {
+  const send = progressSender(event, 'chromium-download-progress');
+  return manageKernel(async () => {
     const exe = await downloadChromium(DATA_DIR, send);
     process.env.LFB_CHROMIUM_EXECUTABLE = exe;
     return { ok: true, executable: exe };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
+  });
 });
 
 handle('open-data-dir', async () => {

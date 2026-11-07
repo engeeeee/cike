@@ -6,6 +6,8 @@
 
 > **Windows 10/11 x64**：[下载 Windows 版](https://github.com/engeeeee/cike/releases/latest) · [使用与构建说明](docs/WINDOWS.md)。完整解压后双击 `CIKE.exe` 即可运行。下方正式发布与 macOS 安装说明保留自上游。
 
+> **0.10.0 内核存储管理**：在“设置 → Camoufox 指纹内核”自定义保存位置、验证后迁移，并按副本删除内核文件。环境运行时禁止操作，环境配置和登录数据独立保留。用法见 [Windows 说明](docs/WINDOWS.md#camoufox-内核位置与删除0100)。
+
 > **0.9.0 内核模拟**：可选 Camoufox / Firefox 内核，在内核中设置 CPU 与显卡标识，保持原生 Canvas/音频，避免 0.8.0 的网页 API 替换方式。首次需在设置下载约 1.3 GB 内核；Chrome 与 Firefox 的登录数据分别保存。软件层模式继续保留。范围、检测验证及限制见 [硬件模拟说明](docs/HARDWARE.md)。
 
 <p align="center">本地多环境浏览器 · 独立会话 · 代理管理 · 自动化 API</p>

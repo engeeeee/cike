@@ -48,7 +48,9 @@ class BrowserManager {
       headless: s.headless, opened_at: new Date(s.openedAt).toISOString(), network: s.network }));
   }
   async open(id, options = {}) {
+    if (this.kernelMaintenance || this.shuttingDown) throw Object.assign(new Error('正在管理浏览器内核或退出应用，请完成后再打开环境'), { status: 409 });
     if (this.closing.has(id)) await this.closing.get(id);
+    if (this.kernelMaintenance || this.shuttingDown) throw Object.assign(new Error('正在管理浏览器内核或退出应用，请完成后再打开环境'), { status: 409 });
     if (this.opening.has(id)) return this.opening.get(id);
     this.cancelled.delete(id);
     const pending = this._open(id, options);
@@ -217,5 +219,14 @@ class BrowserManager {
     return { closed: ids.length };
   }
   getContext(id) { return this.sessions.get(id)?.context || null; }
+  async manageKernel(operation) {
+    if (this.shuttingDown) throw new Error('应用正在退出');
+    if (this.kernelMaintenance) throw new Error('另一项内核操作正在进行，请稍后再试');
+    if (this.sessions.size || this.opening.size || this.closing.size) throw new Error('请先关闭所有浏览器环境，再管理内核');
+    this.kernelMaintenance = true;
+    const task = Promise.resolve().then(operation); this.kernelTask = task;
+    try { return await task; }
+    finally { this.kernelMaintenance = false; if (this.kernelTask === task) this.kernelTask = null; }
+  }
 }
 module.exports = { BrowserManager };
