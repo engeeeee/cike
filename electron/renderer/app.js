@@ -89,6 +89,7 @@ function initNewPage() {
   refreshNewProxySelect();
   if (newPageInited) return;
   newPageInited = true;
+  mountHardware(document.getElementById('n-hardware'), 'n').catch(error => toast(error.message, true));
 
   document.getElementById('n-proxy').onchange = () => {
     document.getElementById('n-proxy-result').textContent = '';
@@ -167,7 +168,7 @@ async function saveNewProfile(openAfter = false) {
   const [vw, vh] = document.getElementById('n-vp').value.split('x').map(Number);
   const spec = {
     group: document.getElementById('n-group').value.trim(),
-    fingerprintMode: 'native',
+    ...readHardware(document, 'n'),
     locale: document.getElementById('n-locale').value,
     timezone: document.getElementById('n-tz').value,
     viewport: { width: vw, height: vh },
@@ -178,6 +179,8 @@ async function saveNewProfile(openAfter = false) {
 
   try {
     const r = await api('/api/profiles', { method: 'POST', body: JSON.stringify(spec) });
+    const seed = document.getElementById('n-fingerprint-seed');
+    if (seed) { seed.value = ''; document.getElementById('n-hardware-id').textContent = '保存时生成固定指纹编号'; }
     toast('环境已创建');
     // Reset form
     await loadProfiles();
@@ -202,7 +205,7 @@ async function openProfileWithCheck(profileId) {
     toast('请先在“设置”里下载 Chromium 内核', true);
     return;
   }
-  if (p.fingerprintMode !== 'native') { toast('请先在编辑中转换旧环境；站点数据会保留', true); return; }
+  if (!['native', 'hardware'].includes(p.fingerprintMode)) { toast('请先在编辑中转换旧环境；站点数据会保留', true); return; }
   if (p.proxyId || p.proxy) toast('正在验证代理，失败将阻止打开…');
   try {
     await api('/api/openBrowser', { method: 'POST', body: JSON.stringify({ profile_id: profileId }) });
@@ -276,7 +279,7 @@ function renderProfiles() {
           <div class="environment-title"><div class="name">${esc(p.name)}</div><span class="environment-group" title="${esc(p.group || '未分组')}">${esc(p.group || '未分组')}</span></div>
           <div class="environment-state">
             <span class="pill ${p.open ? 'open' : 'closed'}">${p.phase === 'opening' ? '启动中' : p.phase === 'closing' ? '关闭中' : p.open ? '运行中' : '已关闭'}</span>
-            <span class="environment-mode">${p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
+            <span class="environment-mode">${p.fingerprintMode === 'hardware' ? '硬件模拟' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
           </div>
         </div>
         <div class="environment-network">
@@ -401,9 +404,9 @@ function openProfileModal(existing) {
     <div class="field"><label>名称</label><input id="f-name" class="input" value="${esc(p.name || '')}" placeholder="例如：店铺-01"></div>
     <div class="field-row">
       <div class="field"><label>分组</label><input id="f-group" class="input" list="f-group-list" value="${esc(p.group || '')}" placeholder="选填，可选已有或输入新的"><datalist id="f-group-list">${[...new Set(state.profiles.map((x) => x.group).filter(Boolean))].sort().map((g) => `<option value="${esc(g)}">`).join('')}</datalist></div>
-      <div class="field"><label>指纹策略</label><p class="hint">原生一致：使用本机平台和硬件属性。</p></div>
+      <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致或硬件模拟，重开环境生效。</p></div>
     </div>
-    ${isEdit && p.fingerprintMode !== 'native' ? '<p class="hint">旧环境已暂停启动。转换会取消原有系统、CPU、内存、Canvas 和 Audio 伪装，保留 Cookie、站点数据、代理及窗口设置。原指纹配置会留存备查。</p><label><input id="f-convert" type="checkbox"> 我已了解指纹会改变，转换为原生一致模式</label>' : ''}
+    ${isEdit && !['native', 'hardware'].includes(p.fingerprintMode) ? '<p class="hint">旧环境已暂停启动。转换会更新指纹配置，保留 Cookie、站点数据、代理及窗口设置。原指纹配置会留存备查。</p><label><input id="f-convert" type="checkbox"> 我已了解指纹会改变，同意转换环境</label>' : ''}
     <div class="field"><label>代理</label>
       <div style="display:flex;gap:8px">
         <select id="f-proxy" class="input" style="flex:1">${proxyOptionsHtml(p.proxyId || (p.proxy ? '__custom' : ''))}</select>
@@ -423,6 +426,7 @@ function openProfileModal(existing) {
       <div class="field"><label>密码</label><input id="f-ppass" class="input" type="password"></div>
     </div>
     <details class="advanced"><summary>指纹选项</summary>
+      <div id="f-hardware"></div>
       <div class="field-row" style="margin-top:10px">
         <div class="field"><label>语言</label><select id="f-locale" class="input">${locales.map((l) => `<option value="${esc(l)}" ${((p.locale || 'auto') === l) ? 'selected' : ''}>${l === 'auto' ? TIMEZONE_LABELS.auto : esc(l)}</option>`).join('')}</select></div>
         <div class="field"><label>时区</label><select id="f-tz" class="input">${timezones.map((t) => `<option value="${esc(t)}" ${((p.timezone || 'auto') === t) ? 'selected' : ''}>${TIMEZONE_LABELS[t] || esc(t)}</option>`).join('')}</select></div>
@@ -443,6 +447,7 @@ function openProfileModal(existing) {
       <button class="btn primary" id="m-save">${isEdit ? '保存' : '创建'}</button>
     </div>
   `, (body, close) => {
+    mountHardware(body.querySelector('#f-hardware'), 'f', p).catch(error => toast(error.message, true));
     const proxySel = body.querySelector('#f-proxy');
     const customBox = body.querySelector('#f-custom-proxy');
     if (p.proxy) {
@@ -492,14 +497,14 @@ function openProfileModal(existing) {
     };
     body.querySelector('#m-cancel').onclick = close;
     body.querySelector('#m-save').onclick = async () => {
-      if (isEdit && p.fingerprintMode !== 'native' && !body.querySelector('#f-convert').checked) { toast('请先确认转换说明', true); return; }
+      if (isEdit && !['native', 'hardware'].includes(p.fingerprintMode) && !body.querySelector('#f-convert').checked) { toast('请先确认转换说明', true); return; }
       const name = body.querySelector('#f-name').value.trim();
       if (!name) { toast('请填写名称', true); return; }
       const [vw, vh] = body.querySelector('#f-vp').value.split('x').map(Number);
       const spec = {
         name,
         group: body.querySelector('#f-group').value.trim(),
-        fingerprintMode: 'native',
+        ...readHardware(body, 'f', p),
         locale: body.querySelector('#f-locale').value,
         timezone: body.querySelector('#f-tz').value,
         viewport: { width: vw, height: vh },

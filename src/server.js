@@ -128,12 +128,14 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
 
   // --- meta ---
   router.get('/getVersion', (ctx) => {
-    ctx.body = { ok: true, version: VERSION, name: 'cike', platform: HOST_PLATFORM, fingerprintMode: 'native', credentialProtection: proxyStore.codec.protection };
+    ctx.body = { ok: true, version: VERSION, name: 'cike', platform: HOST_PLATFORM, fingerprintMode: 'per-profile', fingerprintModes: ['native', 'hardware'], credentialProtection: proxyStore.codec.protection };
   });
 
   router.get('/settings', (ctx) => {
     ctx.body = { ok: true, settings: settings.get() };
   });
+  router.get('/fingerprints/options', ctx => { ctx.body = { ok: true, ...require('./hardware').hardwareOptions() }; });
+  router.post('/fingerprints/generate', ctx => { ctx.body = { ok: true, fingerprint: require('./hardware').generateHardware() }; });
 
   router.patch('/settings', (ctx) => {
     ctx.body = { ok: true, settings: settings.set(ctx.request.body || {}) };

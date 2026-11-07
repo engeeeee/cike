@@ -72,7 +72,7 @@
             </div>
           </div>
           <div class="field-row">
-            <div class="field"><label>指纹策略</label><p class="hint">原生一致 · 跟随本机系统与硬件</p></div>
+            <div class="field"><label>指纹策略</label><p class="hint">在下方选择原生一致或硬件模拟。</p></div>
             <div class="field"><label>分辨率</label><select id="n-vp" class="input"></select></div>
           </div>
         </div>
@@ -92,7 +92,7 @@
             <div class="field"><label>语言</label><select id="n-locale" class="input"></select></div>
             <div class="field"><label>时区</label><select id="n-tz" class="input"></select></div>
           </div>
-          <p class="hint">CPU、内存、Canvas、Audio、显卡和浏览器版本沿用 Chromium 原生值，使页面与 Worker 保持一致。不同环境独立保存登录状态，但仍可能有相同硬件指纹。</p>
+          <div id="n-hardware"></div>
           <div class="field"><label>WebRTC</label><select id="n-webrtc" class="input"><option value="auto">自动（限制直连 UDP）</option><option value="restricted">限制直连 UDP（可能影响通话）</option><option value="default">默认（绑定代理时仍限制 UDP）</option></select></div>
         </div>
         <div class="row" style="margin-top:4px">
@@ -179,6 +179,7 @@
 <div id="modal-root"></div>
 <div id="toast-root"></div>
 <script src="environment-proxy.js"></script>
+<script src="hardware.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

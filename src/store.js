@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { HOST_PLATFORM, validateProfile } = require('./fingerprint');
 const { privateDirectory, readJSON, writeJSON, credentials } = require('./privatefiles');
 const { validateInlineProxy } = require('./proxyconfig');
+const { completeHardware } = require('./hardware');
 
 const DEFAULT_SPEC = {
   name: 'profile', group: '', fingerprintMode: 'native', platform: HOST_PLATFORM,
@@ -12,6 +13,7 @@ const DEFAULT_SPEC = {
   viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2,
   locale: 'auto', timezone: 'auto', canvasSeed: null, canvasNoise: false,
   hardwareConcurrency: null, deviceMemory: null, webrtc: 'auto', colorScheme: 'light',
+  gpuPreset: 'native', audioNoise: false, fingerprintSeed: null,
 };
 const pick = value => Object.fromEntries(Object.keys(DEFAULT_SPEC).filter(k => Object.hasOwn(value, k)).map(k => [k, value[k]]));
 class ProfileStore {
@@ -45,9 +47,9 @@ class ProfileStore {
     const id = 'p_' + crypto.randomBytes(6).toString('hex');
     const now = new Date().toISOString();
     const sequence = this.sequence + 1;
-    const record = { ...structuredClone(DEFAULT_SPEC), ...pick(spec), id,
+    const record = completeHardware({ ...structuredClone(DEFAULT_SPEC), ...pick(spec), id,
       name: String(spec.name || '').trim() || String(sequence), sequence,
-      viewport: { ...DEFAULT_SPEC.viewport, ...spec.viewport }, createdAt: now, updatedAt: now };
+      viewport: { ...DEFAULT_SPEC.viewport, ...spec.viewport }, createdAt: now, updatedAt: now }, spec);
     validateProfile(record);
     if (record.proxy) validateInlineProxy(record.proxy);
     this.sequence = sequence;
@@ -62,15 +64,17 @@ class ProfileStore {
     const old = this.get(id);
     if (!old) return null;
     let next = { ...old, ...pick(patch), updatedAt: new Date().toISOString() };
-    if (old.fingerprintMode === 'legacy' && patch.fingerprintMode === 'native') {
+    if (old.fingerprintMode === 'legacy' && ['native', 'hardware'].includes(patch.fingerprintMode)) {
       // Keep non-secret former fingerprint settings for reference. Never put
       // proxy credentials into a second unencrypted copy.
       const keys = ['platform', 'userAgent', 'canvasSeed', 'canvasNoise', 'hardwareConcurrency', 'deviceMemory', 'webrtc'];
       next.previousFingerprint = Object.fromEntries(keys.map(k => [k, old[k] ?? null]));
       Object.assign(next, { platform: HOST_PLATFORM, userAgent: null, canvasNoise: false, canvasSeed: null,
-        hardwareConcurrency: null, deviceMemory: null, webrtc: patch.webrtc || (old.webrtc === 'disabled' ? 'restricted' : old.webrtc || 'auto') });
+        hardwareConcurrency: null, deviceMemory: null, webrtc: patch.webrtc || (old.webrtc === 'disabled' ? 'restricted' : old.webrtc || 'auto') },
+        pick(patch), { platform: HOST_PLATFORM, userAgent: null });
     }
-    if (old.fingerprintMode === 'native' || next.fingerprintMode !== 'legacy') validateProfile(next);
+    next = completeHardware(next, old.fingerprintMode === 'hardware' ? { ...old, ...patch } : patch);
+    if (old.fingerprintMode !== 'legacy' || next.fingerprintMode !== 'legacy') validateProfile(next);
     if (next.proxy) {
       next.proxy = { ...next.proxy };
       if (patch.proxy && !Object.hasOwn(patch.proxy, 'password') && old.proxy?.server === next.proxy.server && (old.proxy?.username || '') === (next.proxy.username || '')) next.proxy.password = old.proxy.password;

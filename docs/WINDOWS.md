@@ -7,11 +7,13 @@
 ## 使用
 
 1. 使用 Windows 10 1803 或更新版本、Windows 11 的 Intel/AMD 64 位系统。
-2. 将 `CIKE-0.7.1-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
+2. 将 `CIKE-0.8.0-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
 3. 双击 `CIKE.exe`。运行时已随包提供，无需另装 Node.js。请保留同目录的 DLL、资源目录等文件。
 4. 在“设置”中下载 Chromium 内核，然后创建并打开环境。首次下载需要联网。
 
 本包没有 Windows 代码签名，系统可能显示未识别的发布者。可用随包的 `SHA256SUMS.txt` 核对文件。
+
+0.8.0 新增可选的 CPU/内存、GPU 标识和固定 Canvas/音频软件模拟。已有环境保持原生模式；可在新建或编辑环境的“指纹选项”启用。[硬件模拟范围与限制](HARDWARE.md)
 
 ## 浏览器窗口（0.7.1）
 
@@ -44,7 +46,7 @@ npm run pack:win-x64
 
 ```text
 dist/CIKE-win32-x64/CIKE.exe
-dist/CIKE-0.7.1-windows-x64.zip
+dist/CIKE-0.8.0-windows-x64.zip
 dist/SHA256SUMS.txt
 ```
 
@@ -54,9 +56,9 @@ dist/SHA256SUMS.txt
 
 fork 后在 GitHub 的 Actions 页面启用工作流。`main`、`windows` 和 `windows-*` 分支的代码提交会触发 **Build Windows x64**。完成后在该次运行的 Artifacts 中下载 `CIKE-windows-x64`，解压后得到应用压缩包及校验文件。
 
-工作流在 Windows runner 上检查 API/凭据存储、代理与浏览器回归、最大化和全屏继承、CIKE 内核下载与版本检测，以及源码和打包后桌面应用启动。所有步骤通过后才上传应用。
+工作流在 Windows runner 上检查 API/凭据存储、代理与浏览器回归、硬件模拟及 Worker 一致性、最大化和全屏继承、CIKE 内核下载与版本检测，以及源码和打包后桌面应用启动。所有步骤通过后才上传应用。
 
-**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.7.1-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
+**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.8.0-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
 
 ## 验证范围与实机验收
 

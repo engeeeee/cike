@@ -23,6 +23,7 @@ async function main() {
       ProductName: 'CIKE', 'requested-execution-level': 'asInvoker' },
   });
   fs.copyFileSync(path.join(root, 'docs/WINDOWS.md'), path.join(directory, 'Windows使用说明.md'));
+  fs.copyFileSync(path.join(root, 'docs/HARDWARE.md'), path.join(directory, 'HARDWARE.md'));
   fs.writeFileSync(path.join(directory, '使用说明.txt'), '\ufeff' + [
     'CIKE Windows x64 独立移植版',
     '',
@@ -31,6 +32,7 @@ async function main() {
     '3. 数据默认保存在 %LOCALAPPDATA%\\CIKE，浏览器下载保存在系统下载目录。',
     '4. 更新前退出应用，将新版解压到新目录；无需复制或删除数据目录。',
     '5. 浏览器默认最大化，并记住 F11 全屏选择；可在“设置 → 浏览器窗口”更改。',
+    '6. 硬件模拟需在新建/编辑环境的“指纹选项”中启用，范围和限制见 HARDWARE.md。',
     '',
     '适用于 Windows 10 1803 及以上、Windows 11，Intel/AMD 64 位。',
     '本包未做代码签名。它是独立移植版，不是上游 macOS 官方发布。',

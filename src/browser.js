@@ -130,6 +130,7 @@ class BrowserManager {
       privateDirectory(directory);
       await prepareDownloads(directory, this.downloadsDirectory);
       context = await chromium.launchPersistentContext(directory, launchOptions);
+      if (profile.fingerprintMode === 'hardware') await require('./hardware-runtime').installHardwareContext(context, profile);
       if (!headless && process.platform === 'win32') await this.windowStates.attach(context);
       await configureDownloads(context);
       checkCancelled();

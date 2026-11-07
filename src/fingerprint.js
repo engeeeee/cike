@@ -1,13 +1,15 @@
 'use strict';
-// Native Chromium owns UA, Client Hints, platform, GPU, CPU, memory, Canvas
-// and Audio in every realm. Do not patch only Window and contradict Workers.
+// Native mode preserves Chromium values. Hardware mode is explicit software
+// emulation and must be installed in pages and workers before site scripts.
 const HOST_PLATFORM = { darwin: 'mac', win32: 'win', linux: 'linux' }[process.platform] || 'linux';
 function bad(message) { throw Object.assign(new Error(message), { status: 400 }); }
 function validateProfile(profile) {
-  if (profile.fingerprintMode !== 'native') bad('旧环境需要先转换为原生一致模式；Cookie 和站点数据会保留');
-  if (profile.platform !== HOST_PLATFORM || profile.userAgent || profile.canvasNoise || profile.hardwareConcurrency != null || profile.deviceMemory != null) {
+  if (!['native', 'hardware'].includes(profile.fingerprintMode)) bad('旧环境需要先转换为原生一致模式；Cookie 和站点数据会保留');
+  if (profile.platform !== HOST_PLATFORM || profile.userAgent) bad('当前使用本机系统与原生浏览器 UA，不支持跨系统伪装');
+  if (profile.fingerprintMode === 'native' && (profile.canvasNoise || profile.hardwareConcurrency != null || profile.deviceMemory != null || profile.audioNoise || (profile.gpuPreset && profile.gpuPreset !== 'native'))) {
     bad('原生一致模式使用本机平台、UA、CPU、内存与 Canvas；不支持页面级伪装');
   }
+  if (profile.fingerprintMode === 'hardware') require('./hardware').validateHardware(profile);
   if (!['auto', 'default', 'restricted'].includes(profile.webrtc)) bad('WebRTC 请选择自动、默认或限制直连 UDP');
   if (profile.timezone !== 'auto') {
     try { new Intl.DateTimeFormat('en', { timeZone: profile.timezone }).format(); } catch { bad('无效的 IANA 时区'); }
@@ -33,6 +35,9 @@ function buildContextOptions(profile) {
   if (profile.locale !== 'auto') options.locale = profile.locale;
   if (profile.timezone !== 'auto') options.timezoneId = profile.timezone;
   if (profile.proxy) options.proxy = profile.proxy;
+  if (profile.fingerprintMode === 'hardware') options.extraHTTPHeaders = {
+    'Device-Memory': String(profile.deviceMemory), 'Sec-CH-Device-Memory': String(profile.deviceMemory),
+  };
   return { options };
 }
 function webrtcArgs(profile) {
