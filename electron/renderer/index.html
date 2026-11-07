@@ -156,6 +156,12 @@
           <p class="hint">选择“是”后，浏览器先连本机中转，再经过当前电脑的系统代理连接 SOCKS5。没有填写代理时，只走系统代理。更改后重新打开环境生效。</p>
         </div>
         <div class="card">
+          <h2>浏览器窗口</h2>
+          <label>新环境和新窗口的打开方式（Windows）</label>
+          <div class="row"><select id="set-browser-window-mode" class="input"><option value="remember">记住上次状态（默认最大化）</option><option value="maximized">始终最大化</option><option value="fullscreen">始终全屏（F11）</option><option value="normal">按环境分辨率打开</option></select><button id="btn-save-window-mode" class="btn primary small">保存</button></div>
+          <p class="hint">默认沿用手动最大化或 F11 全屏的选择，页面大小随实际窗口变化。更改后对新打开的窗口生效。</p>
+        </div>
+        <div class="card">
           <h2>软件更新</h2>
           <div id="update-status" class="kv">尚未检查</div>
           <div class="row"><button id="btn-check-update" class="btn small">检查更新</button><button id="btn-install-update" class="btn primary small hidden">下载并安装</button></div>

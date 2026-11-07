@@ -50,6 +50,15 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     await page.locator('#n-save').click();
     await page.getByText('环境已创建', { exact: true }).waitFor();
     assert.equal(Object.keys(JSON.parse(fs.readFileSync(profiles.file))).length, 2);
+    await page.locator('[data-page="settings"]').click();
+    for (const mode of ['fullscreen', 'remember']) {
+      await page.locator('#set-browser-window-mode').selectOption(mode);
+      const savedSettings = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'PATCH');
+      await page.locator('#btn-save-window-mode').click();
+      assert.equal((await savedSettings).status(), 200);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'))).browserWindowMode, mode);
+    }
+    await page.locator('[data-page="profiles"]').click();
     await app.evaluate(async ({ clipboard }) => {
       globalThis.cikeClipboardBackup = await clipboard.read();
       await clipboard.writeText('socks5://fixture-user:fixture-pass@127.0.0.1:1080');

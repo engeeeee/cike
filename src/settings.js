@@ -6,17 +6,32 @@ class Settings {
   constructor(dir, resolveSystemProxy) {
     this.file = path.join(dir, 'settings.json');
     this.resolveSystemProxy = resolveSystemProxy;
-    this.value = { socksViaSystemProxy: false };
     privateDirectory(dir);
-    this.value.socksViaSystemProxy = readJSON(this.file, {}).socksViaSystemProxy === true;
+    const saved = readJSON(this.file, {});
+    this.value = { socksViaSystemProxy: saved.socksViaSystemProxy === true,
+      browserWindowMode: ['remember', 'maximized', 'fullscreen', 'normal'].includes(saved.browserWindowMode) ? saved.browserWindowMode : 'remember',
+      browserWindowState: ['normal', 'maximized', 'fullscreen'].includes(saved.browserWindowState) ? saved.browserWindowState : 'maximized' };
   }
   get() { return { ...this.value }; }
   set(value) {
-    if (typeof value.socksViaSystemProxy !== 'boolean') throw new Error('请选择是否通过系统代理');
-    const next = { socksViaSystemProxy: value.socksViaSystemProxy };
+    const next = { ...this.value };
+    if (Object.hasOwn(value, 'socksViaSystemProxy')) {
+      if (typeof value.socksViaSystemProxy !== 'boolean') throw new Error('请选择是否通过系统代理');
+      next.socksViaSystemProxy = value.socksViaSystemProxy;
+    }
+    if (Object.hasOwn(value, 'browserWindowMode')) {
+      if (!['remember', 'maximized', 'fullscreen', 'normal'].includes(value.browserWindowMode)) throw new Error('请选择有效的浏览器窗口模式');
+      next.browserWindowMode = value.browserWindowMode;
+    }
     writeJSON(this.file, next);
     this.value = next;
     return this.get();
+  }
+  rememberWindowState(state) {
+    if (this.value.browserWindowMode !== 'remember' || !['normal', 'maximized', 'fullscreen'].includes(state) || state === this.value.browserWindowState) return;
+    const next = { ...this.value, browserWindowState: state };
+    writeJSON(this.file, next);
+    this.value = next;
   }
   async route(host, port) {
     if (!this.value.socksViaSystemProxy) return null;
