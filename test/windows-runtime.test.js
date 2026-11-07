@@ -25,7 +25,11 @@ test('Windows downloads and verifies Chromium, opens isolated profiles and prese
       manager = new BrowserManager(store, null, null, { startPage: false, downloadsDirectory: path.join(root, '下载') });
       const a = store.create({}), b = store.create({});
       await manager.open(a.id, { headless: true });
-      await manager.getContext(a.id).addCookies([{ name: 'fixture', value: 'saved', url: 'https://example.com' }]);
+      // An explicit expiry makes this a persistent cookie. Session cookies
+      // added without visiting a site need not survive a browser restart.
+      await manager.getContext(a.id).addCookies([{ name: 'fixture', value: 'saved', url: 'https://example.com',
+        expires: Math.floor(Date.now() / 1000) + 86400 }]);
+      assert.equal((await manager.getContext(a.id).cookies())[0]?.value, 'saved');
       await manager.open(b.id, { headless: true });
       assert.deepEqual(await manager.getContext(b.id).cookies(), []);
       await manager.close(a.id);
