@@ -1,6 +1,8 @@
 # CIKE Windows x64
 
-这是基于 [chainfix/cike](https://github.com/chainfix/cike) v0.7.0（`abeacd2`）制作的独立 Windows 移植版，在 [engeeeee/cike](https://github.com/engeeeee/cike/tree/windows) 的 `windows` 分支维护。
+这是基于 [chainfix/cike](https://github.com/chainfix/cike) v0.7.0（`abeacd2`）制作的独立 Windows 移植版，在 [engeeeee/cike](https://github.com/engeeeee/cike) 维护。
+
+[下载 Windows 发布版](https://github.com/engeeeee/cike/releases/latest)，选择应用 ZIP 和 `SHA256SUMS.txt`。Release 中的下载文件无需登录 GitHub。
 
 ## 使用
 
@@ -47,6 +49,8 @@ dist/SHA256SUMS.txt
 fork 后在 GitHub 的 Actions 页面启用工作流。`windows` 分支的提交会触发 **Build Windows x64**。完成后在该次运行的 Artifacts 中下载 `CIKE-windows-x64`，解压后得到应用压缩包及校验文件。
 
 工作流在 Windows runner 上检查 API/凭据存储、代理与浏览器回归、CIKE 内核下载与版本检测，以及源码和打包后桌面应用启动。所有步骤通过后才上传应用。
+
+**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.7.0-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
 
 ## 验证范围与实机验收
 

@@ -1,0 +1,129 @@
+name: Publish Windows Release
+
+"on":
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-windows.yml]
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: Successful Windows build run ID
+        type: string
+        required: true
+        default: '42360719290'
+      tag:
+        description: Windows release tag
+        type: string
+        required: true
+        default: v0.7.0-windows.1
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: windows-release-${{ inputs.tag || 'v0.7.0-windows.1' }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_RUN: ${{ inputs.source_run || '42360719290' }}
+  RELEASE_TAG: ${{ inputs.tag || 'v0.7.0-windows.1' }}
+
+jobs:
+  release:
+    if: github.repository == 'engeeeee/cike'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify successful Windows build
+        id: source
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+            const tag = process.env.RELEASE_TAG;
+            if (!/^\d+$/.test(process.env.SOURCE_RUN)) throw new Error('Invalid build run ID');
+            if (!tag.startsWith(`v${version}-windows.`) || !/^v\d+\.\d+\.\d+-windows\.\d+$/.test(tag)) {
+              throw new Error('Release tag must match the application version');
+            }
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              ...context.repo, run_id: Number(process.env.SOURCE_RUN),
+            });
+            if (run.status !== 'completed' || run.conclusion !== 'success' ||
+                run.path !== '.github/workflows/build-windows.yml') {
+              throw new Error('The selected Windows build has not passed all checks');
+            }
+            try {
+              const { data: existing } = await github.rest.repos.getReleaseByTag({ ...context.repo, tag });
+              if (!existing.draft) throw new Error('This release is already published');
+            } catch (error) { if (error.status !== 404) throw error; }
+            core.setOutput('sha', run.head_sha);
+            core.setOutput('version', version);
+            core.setOutput('filename', `CIKE-${version}-windows-x64.zip`);
+            core.setOutput('build_url', run.html_url);
+      - name: Confirm the artifact matches the application source
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          git diff --exit-code "$SOURCE_SHA" "$GITHUB_SHA" -- . \
+            ':(exclude).github/workflows/publish-windows.yml' \
+            ':(exclude)README.md' ':(exclude)docs/WINDOWS.md'
+      - uses: actions/download-artifact@v4
+        with:
+          name: CIKE-windows-x64
+          run-id: ${{ env.SOURCE_RUN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: release-files
+      - name: Verify package checksum
+        working-directory: release-files
+        env:
+          PACKAGE_NAME: ${{ steps.source.outputs.filename }}
+        run: |
+          test -s "$PACKAGE_NAME"
+          sha256sum --check --strict SHA256SUMS.txt
+      - name: Upload release files
+        id: draft
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: CIKE ${{ steps.source.outputs.version }} Windows x64
+          draft: true
+          prerelease: false
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: |
+            release-files/${{ steps.source.outputs.filename }}
+            release-files/SHA256SUMS.txt
+          body: |
+            CIKE Windows x64 免安装版，基于 v${{ steps.source.outputs.version }}。
+
+            - 适用于 Windows 10/11 的 Intel、AMD 64 位电脑。
+            - 下载 `${{ steps.source.outputs.filename }}`，完整解压后双击 `CIKE.exe`；首次在「设置」下载 Chromium。
+            - 数据默认保存在 `%LOCALAPPDATA%\CIKE`，程序更新时保留。
+
+            已通过 Windows CI 的浏览器与 API 回归、内核安装、数据持久化、源码桌面测试和打包后的应用启动测试：[验证记录](${{ steps.source.outputs.build_url }})。
+
+            这是独立 Windows 移植版，未签名，更新需手动替换。校验文件见 `SHA256SUMS.txt`。
+      - name: Publish the completed release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          PACKAGE_NAME: ${{ steps.source.outputs.filename }}
+        with:
+          script: |
+            const release_id = Number(process.env.RELEASE_ID);
+            const { data: release } = await github.rest.repos.getRelease({ ...context.repo, release_id });
+            for (const name of [process.env.PACKAGE_NAME, 'SHA256SUMS.txt']) {
+              if (!release.assets.some(asset => asset.name === name && asset.state === 'uploaded' && asset.size > 0)) {
+                throw new Error(`Missing release file: ${name}`);
+              }
+            }
+            const { data: published } = await github.rest.repos.updateRelease({
+              ...context.repo, release_id, draft: false, make_latest: 'true',
+            });
+            core.info(`Published ${published.html_url}`);
