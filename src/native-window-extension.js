@@ -4,10 +4,14 @@
 const observed = new Map();
 let working = false;
 async function bridge(method = 'GET', value) {
-  const response = await fetch(cikeWindowBridge.url, { method, headers: { 'Content-Type': 'application/json', 'X-CIKE-Window-Token': cikeWindowBridge.token },
-    ...(value ? { body: JSON.stringify(value) } : {}) });
-  if (!response.ok) throw new Error('CIKE window bridge: ' + response.status);
-  return response.json();
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 1500);
+  try {
+    const response = await fetch(cikeWindowBridge.url, { method, signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error',
+      headers: { 'Content-Type': 'application/json', 'X-CIKE-Window-Token': cikeWindowBridge.token },
+      ...(value ? { body: JSON.stringify(value) } : {}) });
+    if (!response.ok) throw new Error('CIKE window bridge: ' + response.status);
+    return await response.json();
+  } finally { clearTimeout(timeout); }
 }
 async function synchronize() {
   if (working) return;

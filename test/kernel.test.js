@@ -1,5 +1,5 @@
 'use strict';
-const { test } = require('node:test');
+const { test, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
@@ -7,6 +7,7 @@ const os = require('os');
 const { ProfileStore } = require('../src/store');
 const { nativeEnvironment, nativeAsset } = require('../src/nativecore');
 const { buildBackend } = require('../src/server');
+const { createWindowBridge } = require('../src/native-window-bridge');
 test('switching core keeps Chrome data, validates hardware and stores native settings without script noise', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-kernel-unit-'));
   try {
@@ -42,4 +43,48 @@ test('window extension capability cannot read the general API, expires, and reje
     backend.browsers.windowTokens.delete(token);
     assert.equal((await fetch(url + '/browserWindows', { headers })).status, 401);
   } finally { await new Promise(resolve => server.close(resolve)); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('window bridge uses a private IPv4 loopback listener and exposes only the scoped window endpoint', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-window-ip-')), backend = buildBackend(dir);
+  const token = 'b'.repeat(48); backend.browsers.windowTokens.set(token, { ready: false });
+  const bridge = await createWindowBridge(backend.app.callback(), token);
+  const headers = { 'X-CIKE-Window-Token': token };
+  try {
+    const url = new URL(bridge.url); assert.equal(require('net').isIP(url.hostname), 4); assert.ok(url.hostname.startsWith('127.'));
+    assert.notEqual(url.hostname, '127.0.0.1'); assert.ok(!bridge.url.includes(token));
+    assert.equal((await fetch(bridge.url)).status, 401);
+    assert.equal((await fetch(bridge.url, { headers })).status, 200);
+    assert.equal((await fetch(new URL('/api/profiles', bridge.url), { headers: { 'X-API-Token': backend.token } })).status, 404);
+    backend.browsers.windowTokens.delete(token);
+    assert.equal((await fetch(bridge.url, { headers })).status, 401);
+    await bridge.close(); await assert.rejects(fetch(bridge.url, { headers }));
+  } finally { await bridge.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('unavailable window transport preserves a healthy proxied browser; actual engine failures still fail and clean up', async () => {
+  const { EventEmitter } = require('events');
+  const runtime = require('../src/native-runtime');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-window-optional-'));
+  const backend = buildBackend(dir, { startPage: false, checkProxy: async () => ({ status: 'ok', exitIp: '192.0.2.1' }) });
+  const profile = backend.store.create({ fingerprintMode: 'kernel', locale: 'en-US', timezone: 'UTC', proxy: { server: 'http://127.0.0.1:12345' } });
+  const page = new EventEmitter(); page.isClosed = () => false;
+  const context = new EventEmitter(); context.pages = () => [page]; context.close = async () => context.emit('close');
+  let transportClosed = false;
+  mock.method(runtime, 'launchNative', async options => {
+    assert.equal(options.proxy.server, profile.proxy.server); assert.equal(options.bridge, undefined); return context;
+  });
+  backend.browsers.createWindowBridge = async () => { throw Object.assign(new Error('blocked'), { code: 'EACCES' }); };
+  try {
+    const result = await backend.browsers.open(profile.id);
+    assert.equal(result.open, true); assert.match(result.warning, /可手动调整窗口/);
+    assert.equal(backend.browsers.getContext(profile.id), context); assert.equal(backend.browsers.windowTokens.size, 0);
+    await backend.browsers.closeAll();
+    mock.restoreAll();
+    mock.method(runtime, 'launchNative', async () => { throw new Error('engine-launch-failed'); });
+    backend.browsers.createWindowBridge = async token => ({ url: 'http://127.2.3.4:12345/api/browserWindows', token,
+      close: async () => { transportClosed = true; } });
+    await assert.rejects(backend.browsers.open(profile.id), /engine-launch-failed/);
+    assert.equal(transportClosed, true); assert.equal(backend.browsers.windowTokens.size, 0); assert.equal(backend.browsers.isOpen(profile.id), false);
+  } finally { mock.restoreAll(); await backend.browsers.closeAll(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

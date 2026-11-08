@@ -211,8 +211,8 @@ async function openProfileWithCheck(profileId) {
   if (!['native', 'hardware', 'kernel'].includes(p.fingerprintMode)) { toast('请先在编辑中转换旧环境；站点数据会保留', true); return; }
   if (p.proxyId || p.proxy) toast('正在验证代理，失败将阻止打开…');
   try {
-    await api('/api/openBrowser', { method: 'POST', body: JSON.stringify({ profile_id: profileId }) });
-    toast('环境已打开');
+    const result = await api('/api/openBrowser', { method: 'POST', body: JSON.stringify({ profile_id: profileId }) });
+    toast(result.warning ? '环境已打开：' + result.warning : '环境已打开');
     await loadProfiles();
   } catch (err) {
     toast('打开失败：' + err.message, true);
@@ -283,6 +283,7 @@ function renderProfiles() {
           <div class="environment-state">
             <span class="pill ${p.open ? 'open' : 'closed'}">${p.phase === 'opening' ? '启动中' : p.phase === 'closing' ? '关闭中' : p.open ? '运行中' : '已关闭'}</span>
             <span class="environment-mode">${p.fingerprintMode === 'kernel' ? '内核模拟 · Firefox' : p.fingerprintMode === 'hardware' ? '硬件模拟 · 软件层' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
+            ${p.windowWarning ? `<span class="environment-window-warning" role="status">${esc(p.windowWarning)}</span>` : ''}
           </div>
         </div>
         <div class="environment-network">
