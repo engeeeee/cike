@@ -12,6 +12,7 @@ const { checkProxy } = require('./proxycheck');
 const { privateDirectory } = require('./privatefiles');
 const { prepareDownloads, configureDownloads } = require('./downloads');
 const { WindowStateManager } = require('./windowstate');
+const { launchWithGraphics } = require('./native-graphics');
 
 function findFreePort(min, max) {
   return new Promise((resolve, reject) => {
@@ -52,6 +53,7 @@ class BrowserManager {
     return [...this.sessions].map(([id, s]) => ({ profile_id: id,
       ...(s.debugPort ? { debug_url: `http://127.0.0.1:${s.debugPort}` } : {}),
       headless: s.headless, opened_at: new Date(s.openedAt).toISOString(), network: s.network,
+      ...(s.graphicsMode ? { graphicsMode: s.graphicsMode } : {}),
       ...(this.windowWarning(id) ? { warning: this.windowWarning(id) } : {}) }));
   }
   async open(id, options = {}) {
@@ -105,7 +107,7 @@ class BrowserManager {
     // With no configured proxy, auto means native system locale/timezone;
     // no geolocation request, and no invented America/New_York fallback.
     let proxy = proxyRecord ? ProxyStore.toPlaywright(proxyRecord) : null;
-    let forwarder, context, windowToken, windowBridge, windowControl;
+    let forwarder, context, windowToken, windowBridge, windowControl, graphicsMode, graphicsFallback = false;
     try {
       if (proxyRecord?.type === 'socks5' && (proxyRecord.username || proxyRecord.password || useSystemProxy)) {
         const { SocksForwarder } = require('./socksfwd');
@@ -162,7 +164,13 @@ class BrowserManager {
             console.error('[CIKE] window control:', error.code || error.message);
           }
         }
-        context = await require('./native-runtime').launchNative({ dataDir: this.store.dataDir, directory, profile: effective, proxy, headless, downloadsDirectory, bridge });
+        const graphics = this.settings?.get();
+        ({ context, graphicsMode, graphicsFallback } = await launchWithGraphics(mode => require('./native-runtime').launchNative({
+          dataDir: this.store.dataDir, directory, profile: effective, proxy, headless, downloadsDirectory, bridge, graphicsMode: mode,
+        }), { mode: graphics?.camoufoxGraphicsMode || 'auto', remembered: graphics?.camoufoxAutoSoftware === true, beforeRetry: () => {
+          checkCancelled();
+          const entry = this.windowTokens.get(windowToken); if (entry) entry.ready = false;
+        } }));
         let closed = false;
         context.once('close', () => { closed = true; });
         if (bridge) {
@@ -185,7 +193,7 @@ class BrowserManager {
       if (!kernel && !headless && process.platform === 'win32') await this.windowStates.attach(context);
       if (!kernel) await configureDownloads(context);
       checkCancelled();
-      const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network, windowControl };
+      const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network, windowControl, graphicsMode };
       this.sessions.set(id, session);
       context.on('close', () => { if (windowToken) this.windowTokens.delete(windowToken); if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); windowBridge?.close().catch(() => {}); });
       const watchPage = page => page.on('close', () => {
@@ -201,9 +209,12 @@ class BrowserManager {
         this.store.recordNetwork(id, session.network);
       });
       checkCancelled();
+      if (graphicsFallback) this.settings?.rememberCamoufoxSoftware();
       this.store.recordOpened(id, session.network);
+      const warning = [graphicsFallback ? '检测到 GPU/D3D11 启动失败，已自动使用兼容绘制' : null, this.windowWarning(id)].filter(Boolean).join('；');
       return { profile_id: id, open: true, reused: false, headless, network,
-        ...(this.windowWarning(id) ? { warning: this.windowWarning(id) } : {}),
+        ...(graphicsMode ? { graphicsMode } : {}),
+        ...(warning ? { warning } : {}),
         ...(debugPort ? { debug_url: `http://127.0.0.1:${debugPort}` } : {}) };
     } catch (error) {
       if (windowToken) this.windowTokens.delete(windowToken);

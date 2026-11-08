@@ -114,6 +114,10 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
       assert.equal((await savedSettings).status(), 200);
       assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'))).browserWindowMode, mode);
     }
+    await page.locator('#set-native-graphics').selectOption('software');
+    const graphicsSaved = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'PATCH');
+    await page.locator('#btn-save-native-graphics').click(); assert.equal((await graphicsSaved).status(), 200);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'))).camoufoxGraphicsMode, 'software');
     await page.locator('[data-page="profiles"]').click();
     await app.evaluate(async ({ clipboard }) => {
       globalThis.cikeClipboardBackup = await clipboard.read();
@@ -172,6 +176,7 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     if (process.env.CIKE_CAMOUFOX_EXECUTABLE) {
       await kernelCard.locator('[data-act="open"]').click();
       await kernelCard.getByText('运行中', { exact: true }).waitFor({ timeout: 40000 });
+      await kernelCard.getByText('兼容绘制', { exact: true }).waitFor();
       await page.locator('[data-page="settings"]').click();
       await page.waitForFunction(() => document.querySelector('#native-storage-notice').textContent.includes('请先关闭'));
       assert.equal(await page.locator('#btn-native-location').isDisabled(), true);

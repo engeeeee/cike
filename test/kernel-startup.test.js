@@ -96,7 +96,7 @@ test('a delayed window component never closes the SOCKS5 browser, reconnects, an
       assert.notEqual(bridges[1].url, bridges[0].url);
       assert.ok(!fs.existsSync(path.join(backend.store.profileDir(profile.id), 'firefox', 'cike-window-extension', oldToken)));
       const userPrefs = fs.readFileSync(path.join(firefoxDirectory, 'user.js'), 'utf8');
-      assert.ok(userPrefs.includes('keep-user-setting')); assert.equal(userPrefs.match(/CIKE window bridge BEGIN/g).length, 1);
+      assert.ok(userPrefs.includes('keep-user-setting')); assert.equal(userPrefs.match(/CIKE native startup BEGIN/g).length, 1);
       const reopened = manager.getContext(profile.id).pages()[0]; await reopened.goto(url);
       assert.deepEqual(await reopened.evaluate(() => ({ cookie: document.cookie, local: localStorage.getItem('startup') })), { cookie: 'startup=retained', local: 'retained' });
       assert.equal(direct, 0);

@@ -283,6 +283,7 @@ function renderProfiles() {
           <div class="environment-state">
             <span class="pill ${p.open ? 'open' : 'closed'}">${p.phase === 'opening' ? '启动中' : p.phase === 'closing' ? '关闭中' : p.open ? '运行中' : '已关闭'}</span>
             <span class="environment-mode">${p.fingerprintMode === 'kernel' ? '内核模拟 · Firefox' : p.fingerprintMode === 'hardware' ? '硬件模拟 · 软件层' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
+            ${p.nativeGraphicsMode === 'software' ? '<span class="environment-mode">兼容绘制</span>' : ''}
             ${p.windowWarning ? `<span class="environment-window-warning" role="status">${esc(p.windowWarning)}</span>` : ''}
           </div>
         </div>
@@ -761,6 +762,8 @@ async function loadSettings() {
   const { settings } = await api('/api/settings');
   document.getElementById('set-socks-system-proxy').value = settings.socksViaSystemProxy ? 'yes' : 'no';
   document.getElementById('set-browser-window-mode').value = settings.browserWindowMode || 'remember';
+  document.getElementById('set-native-graphics').value = settings.camoufoxGraphicsMode || 'auto';
+  document.getElementById('native-graphics-status').textContent = settings.camoufoxGraphicsMode === 'auto' && settings.camoufoxAutoSoftware ? '已记住图形启动失败：自动使用兼容绘制。重新保存“自动”可再次尝试硬件加速。' : '';
   document.getElementById('set-api-url').value = apiBase() + '/';
   document.getElementById('set-api-token').value = token();
   try {
@@ -850,6 +853,13 @@ document.getElementById('btn-search').onclick = () => {
 };
 document.getElementById('btn-download-browser').onclick = startChromiumDownload;
 document.getElementById('btn-download-native').onclick = startNativeDownload;
+document.getElementById('btn-save-native-graphics').onclick = async () => {
+  try {
+    await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ camoufoxGraphicsMode: document.getElementById('set-native-graphics').value }) });
+    toast('图形渲染设置已保存，重新打开环境后生效');
+    await loadSettings();
+  } catch (error) { toast(error.message, true); }
+};
 document.getElementById('btn-save-proxy-route').onclick = async () => {
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ socksViaSystemProxy: document.getElementById('set-socks-system-proxy').value === 'yes' }) });
