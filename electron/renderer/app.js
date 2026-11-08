@@ -284,6 +284,7 @@ function renderProfiles() {
             <span class="pill ${p.open ? 'open' : 'closed'}">${p.phase === 'opening' ? '启动中' : p.phase === 'closing' ? '关闭中' : p.open ? '运行中' : '已关闭'}</span>
             <span class="environment-mode">${p.fingerprintMode === 'kernel' ? '内核模拟 · Firefox' : p.fingerprintMode === 'hardware' ? '硬件模拟 · 软件层' : p.fingerprintMode === 'native' ? '原生一致' : '旧环境 · 需要转换'}</span>
             ${p.nativeGraphicsMode === 'software' ? '<span class="environment-mode">兼容绘制</span>' : ''}
+            ${p.nativeCrash ? '<span class="environment-window-warning" role="status">标签页发生崩溃；可关闭重开环境并导出诊断</span>' : ''}
             ${p.windowWarning ? `<span class="environment-window-warning" role="status">${esc(p.windowWarning)}</span>` : ''}
           </div>
         </div>
@@ -853,6 +854,13 @@ document.getElementById('btn-search').onclick = () => {
 };
 document.getElementById('btn-download-browser').onclick = startChromiumDownload;
 document.getElementById('btn-download-native').onclick = startNativeDownload;
+document.getElementById('btn-native-diagnostics').onclick = async () => {
+  try {
+    const result = await window.lfb.nativeDiagnosticsExport();
+    if (!result.ok) throw new Error(result.error);
+    if (!result.canceled) toast('崩溃诊断已导出');
+  } catch (error) { toast(error.message, true); }
+};
 document.getElementById('btn-save-native-graphics').onclick = async () => {
   try {
     await api('/api/settings', { method: 'PATCH', body: JSON.stringify({ camoufoxGraphicsMode: document.getElementById('set-native-graphics').value }) });

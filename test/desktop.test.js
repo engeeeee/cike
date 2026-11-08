@@ -118,6 +118,18 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     const graphicsSaved = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'PATCH');
     await page.locator('#btn-save-native-graphics').click(); assert.equal((await graphicsSaved).status(), 200);
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'))).camoufoxGraphicsMode, 'software');
+    const { recordFailure } = require('../src/native-diagnostics');
+    recordFailure(dir, p.id, dir, { event: 'launch-failed', mode: 'software', error: new Error('Target crashed') });
+    const exported = path.join(dir, 'exported-diagnostics.json');
+    await app.evaluate(({ dialog }, file) => {
+      globalThis.cikeSaveDialogBackup = dialog.showSaveDialog;
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+    }, exported);
+    try {
+      await page.locator('#btn-native-diagnostics').click();
+      await page.getByText('崩溃诊断已导出', { exact: true }).waitFor();
+      assert.equal(JSON.parse(fs.readFileSync(exported)).reports[0].flags.targetCrashed, true);
+    } finally { await app.evaluate(({ dialog }) => { dialog.showSaveDialog = globalThis.cikeSaveDialogBackup; delete globalThis.cikeSaveDialogBackup; }); }
     await page.locator('[data-page="profiles"]').click();
     await app.evaluate(async ({ clipboard }) => {
       globalThis.cikeClipboardBackup = await clipboard.read();
@@ -188,3 +200,38 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     }
   } finally { await app?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('closing a desktop with an unresponsive browser exits and can reopen the same data directory',
+  { skip: !process.env.CIKE_CAMOUFOX_EXECUTABLE, timeout: 90000 }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-shutdown-'));
+    const profile = new ProfileStore(dir).create({ name: 'Shutdown fixture', fingerprintMode: 'kernel', gpuPreset: 'native', locale: 'en-US', timezone: 'UTC' });
+    let app;
+    const launch = () => _electron.launch({ args: process.env.CIKE_TEST_APP ? [] : [path.resolve(__dirname, '..')],
+      ...(process.env.CIKE_TEST_APP ? { executablePath: process.env.CIKE_TEST_APP } : {}),
+      env: { ...process.env, LFB_DATA: dir }, timeout: 30000 });
+    try {
+      app = await launch(); let page = await app.firstWindow();
+      let card = page.locator('.env-card').filter({ hasText: 'Shutdown fixture' });
+      await card.locator('[data-act="open"]').click(); await card.getByText('运行中', { exact: true }).waitFor({ timeout: 40000 });
+      await app.evaluate(({ app }) => {
+        const requireApp = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
+        requireApp('./src/browser').BrowserManager.prototype.closeAll = function () {
+          const context = this.contexts.values().next().value;
+          globalThis.cikeShutdownBrowserPid = requireApp('./src/browser-lifecycle').ownedBrowser(context).process.pid;
+          return new Promise(() => {});
+        };
+      });
+      const started = Date.now(), exited = app.waitForEvent('close', { timeout: 18000 });
+      await app.evaluate(({ app }) => app.quit());
+      const browserPid = await app.evaluate(() => globalThis.cikeShutdownBrowserPid);
+      assert.ok(browserPid > 0); await exited; app = null;
+      assert.ok(Date.now() - started < 16000);
+      assert.throws(() => process.kill(browserPid, 0), error => error.code === 'ESRCH');
+      app = await launch(); page = await app.firstWindow();
+      card = page.locator('.env-card').filter({ hasText: 'Shutdown fixture' });
+      await card.getByText('已关闭', { exact: true }).waitFor();
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'profiles.json')))[profile.id].name, 'Shutdown fixture');
+      await card.locator('[data-act="open"]').click(); await card.getByText('运行中', { exact: true }).waitFor({ timeout: 40000 });
+      await card.locator('[data-act="close"]').click(); await card.getByText('已关闭', { exact: true }).waitFor();
+    } finally { await app?.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  });

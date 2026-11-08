@@ -12,7 +12,11 @@ permissions:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +50,9 @@ jobs:
       - name: Verify software graphics, automatic GPU fallback and new windows from a Chinese kernel path
         if: ${{ !cancelled() }}
         run: node --test test/kernel-graphics.test.js
+      - name: Verify native Ctrl+T and Ctrl+N commands, old profile recovery and bounded process cleanup
+        if: ${{ !cancelled() }}
+        run: node --test test/kernel-recovery.test.js
       - name: Verify CIKE's Windows kernel installer
         if: ${{ !cancelled() }}
         run: node --test test/windows-runtime.test.js
@@ -65,7 +72,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
-          name: CIKE-windows-x64
+          name: CIKE-windows-x64${{ matrix.os == 'windows-2022' && '-windows-2022' || '' }}
           path: |
             dist/CIKE-*-windows-x64.zip
             dist/SHA256SUMS.txt

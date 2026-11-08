@@ -158,7 +158,9 @@
           <label>图形渲染</label>
           <div class="row"><select id="set-native-graphics" class="input"><option value="auto">自动（图形启动失败后使用兼容模式）</option><option value="software">兼容模式（软件绘制）</option><option value="hardware">硬件加速</option></select><button id="btn-save-native-graphics" class="btn primary small">保存</button></div>
           <div id="native-graphics-status" class="hint" role="status"></div>
-          <p class="hint">遇到 GPU / D3D11 崩溃可选择兼容模式，使用 CPU 合成窗口。可能增加 CPU 占用并改变图形指纹。保存后重新打开环境生效。</p>
+          <p class="hint">兼容模式使用 CPU 合成窗口，并关闭 Canvas 和视频硬件加速。可能增加 CPU 占用并改变图形指纹。保存后重新打开环境生效。</p>
+          <div class="row"><button id="btn-native-diagnostics" class="btn small">导出崩溃诊断</button></div>
+          <p class="hint">崩溃诊断保存在本机，包含系统版本、绘制模式和崩溃类别。升级后首次重开及异常退出后会备份并重建启动缓存，保留 Cookie 和登录数据。</p>
           <label>内核保存位置</label>
           <div id="native-storage-root" class="storage-path">检测中…</div>
           <div class="row storage-actions"><button id="btn-native-location" class="btn small native-storage-action">更改位置 / 迁移</button><button id="btn-native-folder" class="btn small">打开目录</button><button id="btn-native-refresh" class="btn small">刷新</button></div>
