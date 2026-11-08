@@ -16,7 +16,9 @@ async function until(read, predicate) {
 async function nativeMaximized(context) {
   const pid = ownedBrowser(context)?.process?.pid;
   assert.ok(Number.isSafeInteger(pid) && pid > 0);
-  const script = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CikeWindowProbe { [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsZoomed(IntPtr hWnd); }'; $cikeWindow=(Get-Process -Id ${pid} -ErrorAction Stop).MainWindowHandle; [Console]::Write([CikeWindowProbe]::IsZoomed($cikeWindow))`;
+  // Firefox may keep a launcher process and put its UI in a child. Inspect
+  // windows from this process tree only, without depending on window titles.
+  const script = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CikeWindowProbe { [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsZoomed(IntPtr hWnd); }'; $cikeIds=@(${pid}); $cikeProcesses=Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId; do { $cikeNext=@($cikeProcesses | Where-Object { $_.ParentProcessId -in $cikeIds -and $_.ProcessId -notin $cikeIds } | ForEach-Object { [int]$_.ProcessId }); $cikeIds+=$cikeNext } while ($cikeNext.Count); $cikeMax=@(Get-Process -Id $cikeIds -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -and [CikeWindowProbe]::IsZoomed($_.MainWindowHandle) }); [Console]::Write($cikeMax.Count -gt 0)`;
   const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   const { stdout } = await require('util').promisify(require('child_process').execFile)(powershell,
     ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 10000 });
