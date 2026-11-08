@@ -10,24 +10,24 @@ name: Publish Windows Release
         description: Successful Windows build run ID
         type: string
         required: true
-        default: '42405620326'
+        default: '42411179703'
       tag:
         description: Windows release tag
         type: string
         required: true
-        default: v0.9.0-windows.1
+        default: v0.10.0-windows.1
 
 permissions:
   actions: read
   contents: write
 
 concurrency:
-  group: windows-release-${{ inputs.tag || 'v0.9.0-windows.1' }}
+  group: windows-release-${{ inputs.tag || 'v0.10.0-windows.1' }}
   cancel-in-progress: false
 
 env:
-  SOURCE_RUN: ${{ inputs.source_run || '42405620326' }}
-  RELEASE_TAG: ${{ inputs.tag || 'v0.9.0-windows.1' }}
+  SOURCE_RUN: ${{ inputs.source_run || '42411179703' }}
+  RELEASE_TAG: ${{ inputs.tag || 'v0.10.0-windows.1' }}
 
 jobs:
   release:
@@ -106,15 +106,15 @@ jobs:
             - 下载 `${{ steps.source.outputs.filename }}`，完整解压后双击 `CIKE.exe`；首次在「设置」下载 Chromium。
             - 数据默认保存在 `%LOCALAPPDATA%\CIKE`，程序更新时保留。
 
-            本版新增「内核模拟（Camoufox / Firefox）」：CPU 线程数与可选显卡标识由 Firefox 内核配置，Canvas/音频保持原生，不再通过网页脚本替换这些接口。0.8.0 的软件层模式继续保留，仍可能被检测为环境改写。
+            本版新增 Camoufox 内核位置与删除管理。在「设置 → Camoufox 指纹内核」查看路径、版本和占用空间，选择其他磁盘迁移，或删除不再使用的内核副本。
 
-            启用方式：先完全退出旧版 CIKE，打开新版；在「设置 → Camoufox 指纹内核」下载约 1.3 GB 内核，再到新建/编辑环境的「指纹选项」选择「内核模拟」。建议显卡保持原生。
+            迁移会逐文件校验 SHA-256 并验证实际启动，成功才切换位置；旧副本保留，可确认正常后删除。新位置会持久保存，后续下载也使用该位置。请先完全退出旧版 CIKE，再启动新版。
 
-            Firefox 与 Chrome 的 Cookie/站点数据独立保存，切换到 Firefox 需要重新登录；原 Chrome 数据保留，可切回。Firefox 原本不提供 deviceMemory，本模式不补造内存接口，也不提供 Canvas/音频种子噪声。
+            有环境正在启动、运行或关闭时禁止迁移、删除或安装；操作期间也阻止新环境打开。卸载当前内核会优先切换到通过启动验证的兼容副本，没有副本时明确提示需要重新下载。环境配置、Cookie 和登录数据独立保留，所选父目录的其他文件不会删除。
 
-            Windows CI 使用 CPU 4 线程、原生显卡完成 who.1ms.dog 的完整检测，「环境被篡改」结果为「没发现被改过的痕迹」。这只代表对应版本和配置，不保证所有网站无法识别；CPU/GPU 性能仍取决于本机。范围与限制见 [说明文档](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/HARDWARE.md)。
+            此功能只管理 Camoufox；Chromium 仍保存在原数据目录。环境变量指定的外部内核只读。已有的 Firefox 内核模拟、窗口全屏和 SOCKS5 代理功能继续保留。[使用说明](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/WINDOWS.md) · [硬件模拟范围与限制](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/HARDWARE.md)。
 
-            已通过 Windows CI 的浏览器/API/代理回归、原生函数与 Worker 一致性、下载与重启保存、窗口全屏继承、内核安装、源码和打包后应用测试：[验证记录](${{ steps.source.outputs.build_url }})。
+            已通过 Windows CI：真实内核迁移、删除旧副本后保留登录数据、源码和打包后设置页操作，以及原有 API、代理、指纹、窗口、下载回归。[验证记录](${{ steps.source.outputs.build_url }})。
 
             这是独立 Windows 移植版，未签名，更新需手动替换。校验文件见 `SHA256SUMS.txt`。
       - name: Publish the completed release
