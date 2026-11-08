@@ -36,9 +36,9 @@ async function main() {
   fs.writeFileSync(path.join(output, '使用说明.txt'), '\ufeff' + [
     'CIKE / Camoufox Windows 内核诊断', '',
     '1. 完整解压，双击 CIKE-Core-Diagnostic.exe。无需安装或管理员权限。',
-    '2. 等待检查完成，桌面会生成 CIKE-Camoufox-report-日期时间.json。',
-    '3. 将这份 JSON 报告发回用于定位。', '',
-    '收集：Windows 内部版本、CPU/显卡型号与驱动、可用内存/提交额度、内核关键文件是否与官方包一致、该内核最近的故障模块和异常码。',
+    '2. 窗口提示开始记录后，回到 CIKE 打开会崩溃的环境一次。保持诊断窗口，等待 45 秒。',
+    '3. 桌面会生成 CIKE-Camoufox-report-日期时间.json，将这份报告发回用于定位。', '',
+    '收集：系统/CPU/显卡与驱动、内存、关键文件完整性、近期原生故障，以及本次 Camoufox 进程树的退出码。',
     '工具不会启动浏览器、修改注册表或环境、读取 Cookie/密码/代理配置，也不会上传数据。',
     '这是诊断工具，不代表 Camoufox 的崩溃已经修好。原内核、环境和登录数据保持原样。',
     '适用于 Windows 10/11。校验值见 DIAGNOSTIC-SHA256SUMS.txt。', '',

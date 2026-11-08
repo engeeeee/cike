@@ -3,7 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { nativeAsset, nativeMarker, nativeExecutable, BUILD } = require('../src/nativecore');
+const { nativeAsset, nativeMarker, nativeExecutable, nativeEnvironment, BUILD } = require('../src/nativecore');
 const { extractBrowserZip } = require('../src/zip');
 const { writePrivate } = require('../src/privatefiles');
 const { downloadFile } = require('./chromium');
@@ -12,8 +12,35 @@ const pending = new Map();
 async function verifyNativeExecutable(executable) {
   const version = fs.readFileSync(path.join(path.dirname(executable), 'application.ini'), 'utf8').match(/^Version=(.+)$/m)?.[1].trim();
   if (version !== BUILD) throw new Error('指纹内核版本不匹配');
-  const browser = await require('playwright-native').firefox.launch({ executablePath: executable, headless: true, timeout: 30000 });
-  await browser.close();
+  const preferences = { ...require('../src/native-graphics').graphicsPreferences('software'),
+    // The probe uses only data: pages. Block background HTTP(S) as well, so
+    // checking a kernel never contacts a website through the host network.
+    'network.proxy.type': 1, 'network.proxy.http': '127.0.0.1', 'network.proxy.http_port': 9,
+    'network.proxy.ssl': '127.0.0.1', 'network.proxy.ssl_port': 9, 'network.proxy.no_proxies_on': '',
+    'network.http.http3.enable': false,
+  };
+  const browser = await require('playwright-native').firefox.launch({ executablePath: executable, headless: true, timeout: 30000,
+    proxy: { server: 'http://127.0.0.1:9', bypass: '' }, firefoxUserPrefs: preferences, env: nativeEnvironment({}, preferences) });
+  let failure;
+  try {
+    const context = await browser.newContext(); context.setDefaultTimeout(10000);
+    // A live parent/Juggler pipe does not prove that any content process can
+    // start. Keep the first page open while creating a second one as well.
+    for (let n = 0; n < 2; n++) {
+      const page = await context.newPage();
+      await page.goto('data:text/html,<title>CIKE kernel probe</title><canvas width="1" height="1"></canvas>', { timeout: 10000 });
+      const healthy = await page.evaluate(() => {
+        const canvas = document.querySelector('canvas'), drawing = canvas.getContext('2d');
+        drawing.fillStyle = '#123456'; drawing.fillRect(0, 0, 1, 1);
+        return document.title === 'CIKE kernel probe' && [...drawing.getImageData(0, 0, 1, 1).data].join(',') === '18,52,86,255';
+      });
+      if (!healthy) throw new Error('内核内容页面或原生 Canvas 检查未通过');
+    }
+  } catch (error) { failure = error; throw error; }
+  finally {
+    try { await require('../src/browser-lifecycle').stopContext(browser); }
+    catch (error) { if (!failure) throw error; }
+  }
 }
 async function nativeStatus(dir) {
   try { return { installed: true, executable: nativeExecutable(dir), version: BUILD }; }
