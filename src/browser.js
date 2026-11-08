@@ -42,10 +42,17 @@ class BrowserManager {
     this.windowTokens = new Map();
   }
   isOpen(id) { return this.sessions.has(id) || this.opening.has(id); }
+  windowWarning(id) {
+    const session = this.sessions.get(id);
+    if (!session?.windowControl) return null;
+    if (session.windowControl.unavailable) return '窗口同步组件不可用，可手动调整窗口；浏览器继续运行';
+    return this.windowTokens.get(session.windowControl.token)?.ready ? null : '窗口同步暂未连接，正在重试；可手动调整窗口';
+  }
   listOpen() {
     return [...this.sessions].map(([id, s]) => ({ profile_id: id,
       ...(s.debugPort ? { debug_url: `http://127.0.0.1:${s.debugPort}` } : {}),
-      headless: s.headless, opened_at: new Date(s.openedAt).toISOString(), network: s.network }));
+      headless: s.headless, opened_at: new Date(s.openedAt).toISOString(), network: s.network,
+      ...(this.windowWarning(id) ? { warning: this.windowWarning(id) } : {}) }));
   }
   async open(id, options = {}) {
     if (this.kernelMaintenance || this.shuttingDown) throw Object.assign(new Error('正在管理浏览器内核或退出应用，请完成后再打开环境'), { status: 409 });
@@ -98,7 +105,7 @@ class BrowserManager {
     // With no configured proxy, auto means native system locale/timezone;
     // no geolocation request, and no invented America/New_York fallback.
     let proxy = proxyRecord ? ProxyStore.toPlaywright(proxyRecord) : null;
-    let forwarder, context, windowToken;
+    let forwarder, context, windowToken, windowBridge, windowControl;
     try {
       if (proxyRecord?.type === 'socks5' && (proxyRecord.username || proxyRecord.password || useSystemProxy)) {
         const { SocksForwarder } = require('./socksfwd');
@@ -142,24 +149,34 @@ class BrowserManager {
         await fs.promises.mkdir(downloadsDirectory, { recursive: true });
         let bridge;
         if (!headless) {
-          if (!this.localAPIUrl) throw new Error('指纹内核窗口管理需要通过 CIKE 本地服务启动');
           windowToken = crypto.randomBytes(24).toString('hex');
           this.windowTokens.set(windowToken, { profileId: id, ready: false });
-          const endpoint = new URL('api/browserWindows', this.localAPIUrl);
-          // A private .localhost capability host lets the control extension
-          // reach CIKE without bypassing the proxy for ordinary localhost URLs.
-          endpoint.hostname = windowToken + '.localhost';
-          bridge = { url: endpoint.href, token: windowToken };
+          windowControl = { token: windowToken, unavailable: false };
+          try {
+            if (!this.createWindowBridge) throw new Error('window service unavailable');
+            windowBridge = await this.createWindowBridge(windowToken);
+            bridge = { url: windowBridge.url, token: windowToken };
+          } catch (error) {
+            windowControl.unavailable = true;
+            this.windowTokens.delete(windowToken);
+            console.error('[CIKE] window control:', error.code || error.message);
+          }
         }
         context = await require('./native-runtime').launchNative({ dataDir: this.store.dataDir, directory, profile: effective, proxy, headless, downloadsDirectory, bridge });
+        let closed = false;
+        context.once('close', () => { closed = true; });
         if (bridge) {
-          const deadline = Date.now() + 20000;
+          const deadline = Date.now() + 3000;
           while (!this.windowTokens.get(windowToken)?.ready) {
             checkCancelled();
-            if (Date.now() > deadline) throw new Error('指纹内核窗口组件未能连接，请重试');
+            if (closed) throw new Error('浏览器已关闭');
+            // Window sizing is auxiliary. Keep a healthy proxied browser open
+            // while the extension reconnects instead of treating it as a crash.
+            if (Date.now() > deadline) break;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
+        if (closed) throw new Error('浏览器已关闭');
       } else {
         await prepareDownloads(directory, this.downloadsDirectory);
         context = await chromium.launchPersistentContext(directory, launchOptions);
@@ -168,9 +185,9 @@ class BrowserManager {
       if (!kernel && !headless && process.platform === 'win32') await this.windowStates.attach(context);
       if (!kernel) await configureDownloads(context);
       checkCancelled();
-      const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network };
+      const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network, windowControl };
       this.sessions.set(id, session);
-      context.on('close', () => { if (windowToken) this.windowTokens.delete(windowToken); if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); });
+      context.on('close', () => { if (windowToken) this.windowTokens.delete(windowToken); if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); windowBridge?.close().catch(() => {}); });
       const watchPage = page => page.on('close', () => {
         // macOS leaves Chromium alive after its final window closes. Closing
         // the persistent context terminates only this environment's process.
@@ -186,11 +203,13 @@ class BrowserManager {
       checkCancelled();
       this.store.recordOpened(id, session.network);
       return { profile_id: id, open: true, reused: false, headless, network,
+        ...(this.windowWarning(id) ? { warning: this.windowWarning(id) } : {}),
         ...(debugPort ? { debug_url: `http://127.0.0.1:${debugPort}` } : {}) };
     } catch (error) {
       if (windowToken) this.windowTokens.delete(windowToken);
       await context?.close().catch(() => {});
       await forwarder?.stop().catch(() => {});
+      await windowBridge?.close().catch(() => {});
       // Playwright launch errors include argv, but proxy credentials are not
       // in argv. Do not retry by disabling sandbox or removing the proxy.
       throw error;

@@ -40,6 +40,9 @@ jobs:
       - name: Verify native fingerprint core window and fullscreen inheritance
         if: ${{ !cancelled() }}
         run: node --test test/kernel-window.test.js
+      - name: Verify window reconnection and authenticated SOCKS startup in Unicode profiles
+        if: ${{ !cancelled() }}
+        run: node --test test/kernel-startup.test.js
       - name: Verify CIKE's Windows kernel installer
         if: ${{ !cancelled() }}
         run: node --test test/windows-runtime.test.js

@@ -26,7 +26,7 @@
     "pack:win-x64": "node scripts/build-windows.js"
   },
   "type": "commonjs",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "devDependencies": {
     "electron": "44.10.0",
     "electron-packager": "npm:@electron/packager@20.3.0",

@@ -183,6 +183,7 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
       ...store.public(p),
       open: browsers.isOpen(p.id),
       phase: browsers.closing.has(p.id) ? 'closing' : browsers.opening.has(p.id) ? 'opening' : browsers.isOpen(p.id) ? 'open' : 'closed',
+      windowWarning: browsers.windowWarning(p.id),
       ...proxyDisplay(p),
     }));
     ctx.body = { ok: true, profiles };
@@ -335,6 +336,8 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
   });
 
   app.use(router.routes()).use(router.allowedMethods());
+
+  browsers.createWindowBridge = token => require('./native-window-bridge').createWindowBridge(app.callback(), token);
 
   return { app, store, proxyStore, browsers, settings, token, dataDir };
 }
