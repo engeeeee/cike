@@ -8,6 +8,11 @@ function graphicsPreferences(mode, platform = process.platform) {
     'layers.acceleration.disabled': software,
     'layers.gpu-process.enabled': !software && platform === 'win32',
     'layers.gpu-process.force-enabled': false,
+    // The previous compatibility setting changed the compositor only. Canvas
+    // and video could still start GPU-backed work in a content/utility process.
+    'gfx.canvas.accelerated': !software,
+    'gfx.canvas.remote': !software,
+    'media.hardware-video-decoding.enabled': !software,
   };
   if (platform === 'win32') {
     // SW-WR + D3D11 still requires the device that failed in the crash log.

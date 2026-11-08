@@ -13,6 +13,7 @@ const { privateDirectory } = require('./privatefiles');
 const { prepareDownloads, configureDownloads } = require('./downloads');
 const { WindowStateManager } = require('./windowstate');
 const { launchWithGraphics } = require('./native-graphics');
+const { within, stopContext, forceStopContext, ownedBrowser } = require('./browser-lifecycle');
 
 function findFreePort(min, max) {
   return new Promise((resolve, reject) => {
@@ -37,12 +38,14 @@ class BrowserManager {
     this.opening = new Map();
     this.closing = new Map();
     this.cancelled = new Set();
+    this.contexts = new Map();
+    this.crashes = new Map();
     this.startPage = options.startPage !== false;
     this.profileIcons = options.profileIcons !== false;
     this.windowStates = new WindowStateManager(settings);
     this.windowTokens = new Map();
   }
-  isOpen(id) { return this.sessions.has(id) || this.opening.has(id); }
+  isOpen(id) { return this.sessions.has(id) || this.opening.has(id) || this.contexts.has(id); }
   windowWarning(id) {
     const session = this.sessions.get(id);
     if (!session?.windowControl) return null;
@@ -61,10 +64,11 @@ class BrowserManager {
     if (this.closing.has(id)) await this.closing.get(id);
     if (this.kernelMaintenance || this.shuttingDown) throw Object.assign(new Error('正在管理浏览器内核或退出应用，请完成后再打开环境'), { status: 409 });
     if (this.opening.has(id)) return this.opening.get(id);
+    if (!this.sessions.has(id) && this.contexts.has(id)) throw Object.assign(new Error('旧浏览器进程正在退出，请先关闭环境'), { status: 409 });
     this.cancelled.delete(id);
     const pending = this._open(id, options);
     this.opening.set(id, pending);
-    try { return await pending; } finally { this.opening.delete(id); }
+    try { return await pending; } finally { this.opening.delete(id); if (!this.closing.has(id)) this.cancelled.delete(id); }
   }
   async _open(id, { headless = false } = {}) {
     if (typeof headless !== 'boolean') throw Object.assign(new Error('headless 必须为布尔值'), { status: 400 });
@@ -108,6 +112,13 @@ class BrowserManager {
     // no geolocation request, and no invented America/New_York fallback.
     let proxy = proxyRecord ? ProxyStore.toPlaywright(proxyRecord) : null;
     let forwarder, context, windowToken, windowBridge, windowControl, graphicsMode, graphicsFallback = false;
+    const trackContext = launched => {
+      this.contexts.set(id, launched);
+      const process = ownedBrowser(launched)?.process;
+      const forget = () => { if (this.contexts.get(id) === launched) this.contexts.delete(id); };
+      if (process) process.once('exit', forget);
+      launched.once('close', () => { if (!process || process.exitCode != null || process.signalCode != null) forget(); });
+    };
     try {
       if (proxyRecord?.type === 'socks5' && (proxyRecord.username || proxyRecord.password || useSystemProxy)) {
         const { SocksForwarder } = require('./socksfwd');
@@ -167,6 +178,7 @@ class BrowserManager {
         const graphics = this.settings?.get();
         ({ context, graphicsMode, graphicsFallback } = await launchWithGraphics(mode => require('./native-runtime').launchNative({
           dataDir: this.store.dataDir, directory, profile: effective, proxy, headless, downloadsDirectory, bridge, graphicsMode: mode,
+          onContext: trackContext,
         }), { mode: graphics?.camoufoxGraphicsMode || 'auto', remembered: graphics?.camoufoxAutoSoftware === true, beforeRetry: () => {
           checkCancelled();
           const entry = this.windowTokens.get(windowToken); if (entry) entry.ready = false;
@@ -188,6 +200,7 @@ class BrowserManager {
       } else {
         await prepareDownloads(directory, this.downloadsDirectory);
         context = await chromium.launchPersistentContext(directory, launchOptions);
+        trackContext(context);
       }
       if (profile.fingerprintMode === 'hardware') await require('./hardware-runtime').installHardwareContext(context, profile);
       if (!kernel && !headless && process.platform === 'win32') await this.windowStates.attach(context);
@@ -195,12 +208,16 @@ class BrowserManager {
       checkCancelled();
       const session = { context, debugPort, headless, openedAt: Date.now(), forwarder, network, windowControl, graphicsMode };
       this.sessions.set(id, session);
+      this.crashes.delete(id);
       context.on('close', () => { if (windowToken) this.windowTokens.delete(windowToken); if (this.sessions.get(id) === session) this.sessions.delete(id); forwarder?.stop().catch(() => {}); windowBridge?.close().catch(() => {}); });
-      const watchPage = page => page.on('close', () => {
+      const watchPage = page => { page.on('crash', () => this.crashes.set(id, { time: new Date().toISOString() })); page.on('close', () => {
         // macOS leaves Chromium alive after its final window closes. Closing
         // the persistent context terminates only this environment's process.
-        if (!context.pages().some(p => !p.isClosed()) && this.sessions.get(id) === session) this.close(id).catch(() => {});
-      });
+        // Firefox may dispose a Juggler target during native-tab/process
+        // replacement while its real window is still alive. Its page list is
+        // not a window-lifetime signal; let Firefox exit on its last window.
+        if (!kernel && !context.pages().some(p => !p.isClosed()) && this.sessions.get(id) === session) this.close(id).catch(() => {});
+      }); };
       context.on('page', watchPage);
       for (const page of context.pages()) watchPage(page);
       if (!headless && this.startPage) await require('./startpage').openStartPage(context, profile, network, ip => {
@@ -218,7 +235,7 @@ class BrowserManager {
         ...(debugPort ? { debug_url: `http://127.0.0.1:${debugPort}` } : {}) };
     } catch (error) {
       if (windowToken) this.windowTokens.delete(windowToken);
-      await context?.close().catch(() => {});
+      await stopContext(context || this.contexts.get(id)).catch(() => {});
       await forwarder?.stop().catch(() => {});
       await windowBridge?.close().catch(() => {});
       // Playwright launch errors include argv, but proxy credentials are not
@@ -230,29 +247,35 @@ class BrowserManager {
     if (this.closing.has(id)) return this.closing.get(id);
     this.cancelled.add(id);
     const pending = (async () => {
-      await this.opening.get(id)?.catch(() => {});
+      await within(() => this.opening.get(id)?.catch(() => {}), 2000);
       const session = this.sessions.get(id);
-      if (session) {
-        if (!session.headless && process.platform === 'win32') await this.windowStates.capture().catch(error => console.error('[CIKE] remember window:', error.message));
-        await session.context.close();
-        await session.forwarder?.stop();
+      const context = session?.context || this.contexts.get(id);
+      if (context) {
+        if (session && !session.headless && process.platform === 'win32') await within(() => this.windowStates.capture().catch(() => {}), 500);
+        await stopContext(context);
+        await session?.forwarder?.stop();
         if (this.sessions.get(id) === session) this.sessions.delete(id);
+        if (this.contexts.get(id) === context) this.contexts.delete(id);
       }
+      if (this.opening.has(id)) throw Object.assign(new Error('正在取消启动，请稍后重试'), { status: 409 });
       return { profile_id: id, open: false };
     })();
     this.closing.set(id, pending);
-    try { return await pending; } finally { this.closing.delete(id); this.cancelled.delete(id); }
+    try { return await pending; } finally { this.closing.delete(id); if (!this.opening.has(id)) this.cancelled.delete(id); }
   }
   async closeAll() {
-    const ids = [...new Set([...this.opening.keys(), ...this.sessions.keys()])];
+    const ids = [...new Set([...this.opening.keys(), ...this.sessions.keys(), ...this.contexts.keys()])];
     await Promise.all(ids.map(id => this.close(id)));
     return { closed: ids.length };
   }
   getContext(id) { return this.sessions.get(id)?.context || null; }
+  async forceStopAll() {
+    await Promise.allSettled([...this.contexts.values()].map(context => forceStopContext(context)));
+  }
   async manageKernel(operation) {
     if (this.shuttingDown) throw new Error('应用正在退出');
     if (this.kernelMaintenance) throw new Error('另一项内核操作正在进行，请稍后再试');
-    if (this.sessions.size || this.opening.size || this.closing.size) throw new Error('请先关闭所有浏览器环境，再管理内核');
+    if (this.sessions.size || this.opening.size || this.closing.size || this.contexts.size) throw new Error('请先关闭所有浏览器环境，再管理内核');
     this.kernelMaintenance = true;
     const task = Promise.resolve().then(operation); this.kernelTask = task;
     try { return await task; }

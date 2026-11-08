@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('lfb', {
   chromiumDownload: () => ipcRenderer.invoke('chromium-download'),
   onChromiumProgress: (cb) => ipcRenderer.on('chromium-download-progress', (_e, p) => cb(p)),
   nativeStatus: () => ipcRenderer.invoke('native-status'),
+  nativeDiagnosticsExport: () => ipcRenderer.invoke('native-diagnostics-export'),
   nativeDownload: () => ipcRenderer.invoke('native-download'),
   onNativeProgress: (cb) => ipcRenderer.on('native-download-progress', (_e, p) => cb(p)),
   nativeStorageStatus: () => ipcRenderer.invoke('native-storage-status'),

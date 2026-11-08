@@ -7,9 +7,22 @@ const path = require('path');
 const http = require('http');
 const nativeCore = require('../src/nativecore');
 const { startBackend } = require('../src/server');
+const { ownedBrowser } = require('../src/browser-lifecycle');
 async function until(read, predicate) {
-  for (let n = 0; n < 160; n++) { const value = await read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 100)); }
+  const deadline = Date.now() + 16000;
+  do { const value = await read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 100)); } while (Date.now() < deadline);
   throw new Error('Native window state did not settle');
+}
+async function nativeMaximized(context) {
+  const pid = ownedBrowser(context)?.process?.pid;
+  assert.ok(Number.isSafeInteger(pid) && pid > 0);
+  // Firefox may keep a launcher process and put its UI in a child. Inspect
+  // windows from this process tree only, without depending on window titles.
+  const script = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CikeWindowProbe { [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsZoomed(IntPtr hWnd); }'; $cikeIds=@(${pid}); $cikeProcesses=Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId; do { $cikeNext=@($cikeProcesses | Where-Object { $_.ParentProcessId -in $cikeIds -and $_.ProcessId -notin $cikeIds } | ForEach-Object { [int]$_.ProcessId }); $cikeIds+=$cikeNext } while ($cikeNext.Count); $cikeMax=@(Get-Process -Id $cikeIds -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -and [CikeWindowProbe]::IsZoomed($_.MainWindowHandle) }); [Console]::Write($cikeMax.Count -gt 0)`;
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const { stdout } = await require('util').promisify(require('child_process').execFile)(powershell,
+    ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { timeout: 10000 });
+  return stdout.trim() === 'True';
 }
 test('Camoufox native windows maximize and inherit a manual native fullscreen change into popups, environments and restart',
   { skip: process.platform !== 'win32' || !process.env.CIKE_CAMOUFOX_EXECUTABLE, timeout: 120000 }, async () => {
@@ -46,7 +59,13 @@ test('Camoufox native windows maximize and inherit a manual native fullscreen ch
       const a = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native' });
       const b = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native', locale: 'en-US', timezone: 'UTC', proxy: { server: `http://127.0.0.1:${proxy.address().port}` } });
       await manager.open(a.id); const context = manager.getContext(a.id), page = context.pages()[0];
-      await until(() => page.evaluate(() => Math.abs(outerWidth - screen.availWidth) <= 20 && Math.abs(outerHeight - screen.availHeight) <= 20), Boolean);
+      // Server 2022 reports a 24px outer-frame difference when maximized.
+      // Check the real OS window state rather than inferring it from web APIs.
+      try { await until(() => nativeMaximized(context), Boolean); }
+      catch (error) {
+        const bounds = await page.evaluate(() => ({ width: outerWidth, height: outerHeight, available: [screen.availWidth, screen.availHeight], screen: [screen.width, screen.height], dpr: devicePixelRatio }));
+        throw new Error(error.message + ': ' + JSON.stringify({ bounds, warning: manager.windowWarning(a.id), mode: backend.settings.get().browserWindowState }));
+      }
       fullscreen = true;
       await until(() => backend.settings.get().browserWindowState, state => state === 'fullscreen');
       await until(() => full(page), Boolean);

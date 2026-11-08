@@ -15,14 +15,20 @@ const { checkUpdate, installUpdate } = require('./updater');
 const { nativeStatus, downloadNative, verifyNativeExecutable } = require('./nativecore');
 const { NativeStorage } = require('../src/native-storage');
 const nativeStorage = new NativeStorage(DATA_DIR, { verify: verifyNativeExecutable });
+const { within } = require('../src/browser-lifecycle');
 
 let backend = null;
 let mainWindow = null;
+let quitting = false, quitReady = false, reopenRequested = false;
 const uiFile = path.join(__dirname, 'renderer', 'index.html');
 const uiURL = pathToFileURL(uiFile).href;
 if (process.env.LFB_DATA) app.setPath('userData', path.join(DATA_DIR, 'desktop'));
 if (!app.requestSingleInstanceLock()) app.exit(0);
-app.on('second-instance', () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } });
+app.on('second-instance', () => {
+  if (quitting) reopenRequested = true;
+  if (mainWindow && !mainWindow.isDestroyed()) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
+  else if (backend && !quitting) createWindow();
+});
 function trusted(event) {
   if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame || event.senderFrame.url !== uiURL) throw new Error('Untrusted IPC sender');
 }
@@ -62,6 +68,11 @@ async function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  mainWindow.on('close', event => {
+    // Keep a visible window while the browser processes stop. Previously the
+    // final window vanished before before-quit awaited a hung Juggler session.
+    if (process.platform !== 'darwin' && backend && !quitReady) { event.preventDefault(); app.quit(); }
+  });
   await mainWindow.loadFile(uiFile);
 }
 
@@ -93,14 +104,24 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-let quitting = false;
 app.on('before-quit', event => {
-  if (quitting || !backend) return;
+  if (quitReady || !backend) return;
   event.preventDefault();
+  if (quitting) return;
   quitting = true;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('CIKE — 正在关闭浏览器…');
   backend.browsers.shuttingDown = true;
-  Promise.resolve(backend.browsers.kernelTask).catch(() => {}).then(() => backend.browsers.closeAll())
-    .finally(() => { backend.server.close(); app.quit(); });
+  // Let an in-flight file migration finish atomically. The browser shutdown
+  // itself has a deadline even if a crashed target never answers Juggler.
+  Promise.resolve(backend.browsers.kernelTask).catch(() => {}).then(async () => {
+    try { await within(() => backend.browsers.closeAll(), 8000); } catch {}
+    await backend.browsers.forceStopAll();
+  }).finally(() => {
+    backend.server.closeAllConnections(); backend.server.close();
+    quitReady = true;
+    if (reopenRequested) app.relaunch();
+    app.exit(0);
+  });
 });
 
 // --- renderer IPC ---
@@ -112,6 +133,19 @@ handle('chromium-status', async () => {
   return chromiumStatus(DATA_DIR);
 });
 handle('native-status', () => nativeStatus(DATA_DIR));
+handle('native-diagnostics-export', async () => {
+  try {
+    const directory = path.join(DATA_DIR, 'diagnostics');
+    const reports = fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => /^p_[a-f0-9]{12}\.json$/.test(name))
+      .map(name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'))) : [];
+    if (!reports.length) return { ok: false, error: '还没有崩溃诊断记录。环境下次启动失败或标签页崩溃时会自动记录。' };
+    const result = await dialog.showSaveDialog(mainWindow, { title: '导出 Camoufox 崩溃诊断',
+      defaultPath: path.join(app.getPath('downloads'), 'CIKE-diagnostics.json'), filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (result.canceled || !result.filePath) return { ok: true, canceled: true };
+    require('../src/privatefiles').writeJSON(result.filePath, { reports });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
 function progressSender(event, channel) {
   return value => { if (!event.sender.isDestroyed()) event.sender.send(channel, value); };
 }

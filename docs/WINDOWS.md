@@ -7,7 +7,7 @@
 ## 使用
 
 1. 使用 Windows 10 1803 或更新版本、Windows 11 的 Intel/AMD 64 位系统。
-2. 将 `CIKE-0.10.2-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
+2. 将 `CIKE-0.10.3-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
 3. 双击 `CIKE.exe`。运行时已随包提供，无需另装 Node.js。请保留同目录的 DLL、资源目录等文件。
 4. 在“设置”中下载 Chromium 内核，然后创建并打开环境。首次下载需要联网。
 
@@ -15,13 +15,25 @@
 
 0.9.0 新增“内核模拟（Camoufox / Firefox）”，在内核中设置 CPU 和显卡标识，避免网页 API 替换。先在“设置 → Camoufox 指纹内核”下载约 1.3 GB 内核，再在新建/编辑环境的“指纹选项”选择内核模拟。Firefox 与 Chrome 登录数据独立，旧数据保留，切换后需要重新登录。原软件层模式继续保留。[硬件模拟范围与限制](HARDWARE.md)
 
-## Camoufox GPU / D3D11 崩溃（0.10.2）
+## Camoufox 关闭与崩溃恢复（0.10.3）
+
+Firefox 的原生窗口和自动化协议里的页面目标并非一一对应。旧版在页面目标列表为空时主动关闭整个浏览器，可能放大内容进程切换或崩溃的影响。现在由 Firefox 自身的窗口生命周期决定退出，不再根据该列表关闭环境。原生新窗口的默认首页设为 `about:blank`，不恢复崩溃会话。
+
+关闭环境会先正常保存并退出，协议关闭无响应时才终止该环境自身的浏览器进程。退出 CIKE 时保留可见窗口，浏览器关闭等待最多 8 秒，再清理自己的残留进程并退出，避免留下占用单实例锁的后台主进程。进行中的内核文件迁移仍会先完成。
+
+升级后首次重开旧环境，或异常退出后重开，会将 `startupCache`、`shader-cache`、`addonStartup.json.lz4`、`xulstore.json` 中存在的文件移动到该 Firefox 环境的 `cike-recovery` 子目录备份，再由 Firefox 重建。不会删除 Cookie、登录数据库、站点存储、书签、权限或用户设置。无需删除环境、迁移内核或重新下载。
+
+“设置 → Camoufox 指纹内核 → 导出崩溃诊断”可保存本地 JSON，包含 CIKE/内核/系统版本、绘制模式、错误类别及可取得的原生崩溃注释。不会自动发送；报告不包含原始 Playwright 日志、代理密码、页面 URL、Cookie 或内存转储。页面崩溃会在环境卡片提示。
+
+新增测试通过独立的测试扩展直接调用 Firefox 的 `BrowserCommands.openTab` 和 `OpenBrowserWindow`，覆盖原生新标签页和新窗口，而非仅使用网页弹窗。验证旧环境缓存恢复、Cookie/localStorage 保留，以及真实浏览器关闭协议无响应时的进程清理、桌面关闭后重开。CI 同时使用 Windows Server 2022 和当前 Windows runner；这些测试不等于在用户的 Windows 10 电脑及显卡驱动上完成实测，内核自身的内容进程崩溃仍可能需要诊断。
+
+## Camoufox GPU / D3D11 崩溃（0.10.2 / 0.10.3）
 
 日志出现 `Failed to launch GPU process after 3 attempts`、`FEATURE_FAILURE_D3D11_NO_DEVICE` 或 `Failed to initialize CompositorD3D11 for SWGL` 时，表示图形设备或 GPU 子进程初始化失败。日志中的 `SW-WR + D3D11` 仍需要 D3D11 设备。
 
 在“设置 → Camoufox 指纹内核 → 图形渲染”选择：
 
-- **兼容模式（软件绘制）**：遇到启动或新窗口崩溃时优先选择，保存后重新打开环境。使用 CPU 合成，关闭 GPU 子进程和 SWGL 的 D3D11 上传路径；可能增加 CPU 占用并改变 Canvas/WebGL 等图形指纹。实际可用的 WebGL 能力仍取决于系统。
+- **兼容模式（软件绘制）**：保存后重新打开环境。使用 CPU 合成，关闭 GPU 子进程、SWGL 的 D3D11 上传路径以及 Canvas / 视频硬件加速；可能增加 CPU 占用并改变 Canvas/WebGL 等图形指纹。实际可用的 WebGL 能力仍取决于系统，不会通过禁用沙箱或网页脚本补造功能。
 - **自动**：默认保持正常加速策略；仅在识别到上述 Windows 图形启动崩溃时，保留相同环境和代理重试一次兼容模式。启动成功后记住选择，后续环境直接使用兼容绘制。代理或其他启动错误不会因此改为直连或无限重试。
 - **硬件加速**：恢复正常加速偏好。显卡驱动修复后可选择此项，或重新保存“自动”清除已记住的兼容选择，再重新打开环境。
 
@@ -80,7 +92,7 @@ npm run pack:win-x64
 
 ```text
 dist/CIKE-win32-x64/CIKE.exe
-dist/CIKE-0.10.2-windows-x64.zip
+dist/CIKE-0.10.3-windows-x64.zip
 dist/SHA256SUMS.txt
 ```
 
@@ -92,7 +104,7 @@ fork 后在 GitHub 的 Actions 页面启用工作流。`main`、`windows` 和 `w
 
 工作流在 Windows runner 上检查 API/凭据存储、代理与浏览器回归、硬件模拟及 Worker 一致性、最大化和全屏继承、CIKE 内核下载与版本检测、真实内核迁移和删除后的登录数据保留，以及源码和打包后桌面应用的设置操作。所有步骤通过后才上传应用。
 
-**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.10.2-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
+**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.10.3-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
 
 ## 验证范围与实机验收
 
