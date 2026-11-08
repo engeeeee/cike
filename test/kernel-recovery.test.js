@@ -106,3 +106,33 @@ test('real Firefox new-tab/new-window commands remain usable in old and new prof
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+test('an actual Firefox content-process crash does not close its browser and produces an exportable local diagnosis',
+  { skip: !enabled, timeout: 45000 }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-content-crash-'));
+    const backend = await startBackend(dir, { startPage: false });
+    backend.settings.set({ camoufoxGraphicsMode: 'software' });
+    const profile = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native', locale: 'en-US', timezone: 'UTC' });
+    try {
+      await backend.browsers.open(profile.id, { headless: true });
+      const context = backend.browsers.getContext(profile.id), page = context.pages()[0];
+      const crash = page.waitForEvent('crash');
+      // Firefox's intentional content-process crash test page, in a disposable
+      // test profile only. Keep the real production sandbox settings.
+      await assert.rejects(page.goto('about:crashcontent', { timeout: 10000 }), /crash/i); await crash;
+      await until(() => context.pages(), pages => !pages.includes(page));
+      assert.equal(backend.browsers.sessions.has(profile.id), true);
+      const next = await context.newPage(); await next.goto('data:text/html,<title>recovered</title>still running');
+      assert.equal(await next.title(), 'recovered');
+      assert.equal(backend.browsers.crashes.has(profile.id), true);
+      const file = path.join(dir, 'diagnostics', profile.id + '.json');
+      const report = JSON.parse(fs.readFileSync(file));
+      assert.equal(report.event, 'page-crash'); assert.equal(report.flags.targetCrashed, true);
+      assert.equal(report.graphicsMode, 'software');
+      await backend.browsers.closeAll();
+      const state = JSON.parse(fs.readFileSync(path.join(backend.store.profileDir(profile.id), 'firefox', '.cike-runtime.json')));
+      assert.equal(state.crashed, true);
+    } finally {
+      await backend.browsers.closeAll(); await new Promise(resolve => backend.server.close(resolve)); fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });

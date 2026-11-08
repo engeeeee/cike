@@ -46,7 +46,7 @@ function recordFailure(dataDir, id, directory, { event, mode, error, context }) 
     const file = path.join(dataDir, 'diagnostics', id + '.json');
     writeJSON(file, { appVersion: require('../package.json').version, kernel: BUILD, os: { platform: process.platform, release: os.release(), arch: process.arch },
       time: new Date().toISOString(), profile: id, event, graphicsMode: mode || null,
-      flags: failureDetails(String(error?.message || '') + '\n' + logs), crashes: crashEvents(directory) });
+      flags: failureDetails((event === 'page-crash' ? 'Page crashed\n' : '') + String(error?.message || '') + '\n' + logs), crashes: crashEvents(directory) });
     return file;
   } catch (error) { console.error('[CIKE] diagnostics:', error.code || 'write failed'); return null; }
 }

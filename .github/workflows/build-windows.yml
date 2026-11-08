@@ -25,6 +25,15 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install and verify the pinned Electron runtime
+        shell: pwsh
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            node node_modules/electron/install.js
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { exit $LASTEXITCODE }
+            Start-Sleep -Seconds (5 * $attempt)
+          }
       - run: npm run test:unit
       - name: Install and verify pinned native fingerprint core
         run: node scripts/install-native-ci.js

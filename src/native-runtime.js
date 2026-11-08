@@ -75,10 +75,16 @@ async function launchNative({ dataDir, directory, profile, proxy, headless, down
     });
     onContext(context);
     context._cikeOnForcedStop = () => { try { recovery.crash(); } catch {} };
-    context.once('close', () => { try { recovery.close(); } catch (error) { console.error('[CIKE] native state:', error.code); } });
+    let crashTimer;
+    context.once('close', () => { clearTimeout(crashTimer); try { recovery.close(); } catch (error) { console.error('[CIKE] native state:', error.code); } });
     const watch = page => page.on('crash', () => {
       try { recovery.crash(); } catch {}
       recordFailure(dataDir, profile.id, directory, { event: 'page-crash', mode: graphicsMode, context });
+      // Native annotations and Juggler's crash follow-up can arrive after the
+      // page event. Refresh locally once, without running anything in a page.
+      clearTimeout(crashTimer);
+      crashTimer = setTimeout(() => recordFailure(dataDir, profile.id, directory, { event: 'page-crash', mode: graphicsMode, context }), 1500);
+      crashTimer.unref();
     });
     context.on('page', watch); context.pages().forEach(watch);
     // Let Firefox's own download manager keep names/collision handling instead
