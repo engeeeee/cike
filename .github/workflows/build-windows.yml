@@ -43,6 +43,9 @@ jobs:
       - name: Verify window reconnection and authenticated SOCKS startup in Unicode profiles
         if: ${{ !cancelled() }}
         run: node --test test/kernel-startup.test.js
+      - name: Verify software graphics, automatic GPU fallback and new windows from a Chinese kernel path
+        if: ${{ !cancelled() }}
+        run: node --test test/kernel-graphics.test.js
       - name: Verify CIKE's Windows kernel installer
         if: ${{ !cancelled() }}
         run: node --test test/windows-runtime.test.js

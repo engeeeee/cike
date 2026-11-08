@@ -184,6 +184,7 @@ function buildBackend(dataDir = DATA_DIR, options = {}) {
       open: browsers.isOpen(p.id),
       phase: browsers.closing.has(p.id) ? 'closing' : browsers.opening.has(p.id) ? 'opening' : browsers.isOpen(p.id) ? 'open' : 'closed',
       windowWarning: browsers.windowWarning(p.id),
+      nativeGraphicsMode: browsers.sessions.get(p.id)?.graphicsMode || null,
       ...proxyDisplay(p),
     }));
     ctx.body = { ok: true, profiles };

@@ -2,6 +2,7 @@
 const { privateDirectory, readJSON, writeJSON } = require('./privatefiles');
 const path = require('path');
 const { parseSystemProxy } = require('./proxyroute');
+const { GRAPHICS_MODES } = require('./native-graphics');
 class Settings {
   constructor(dir, resolveSystemProxy) {
     this.file = path.join(dir, 'settings.json');
@@ -9,12 +10,19 @@ class Settings {
     privateDirectory(dir);
     const saved = readJSON(this.file, {});
     this.value = { socksViaSystemProxy: saved.socksViaSystemProxy === true,
+      camoufoxGraphicsMode: GRAPHICS_MODES.includes(saved.camoufoxGraphicsMode) ? saved.camoufoxGraphicsMode : 'auto',
+      camoufoxAutoSoftware: saved.camoufoxAutoSoftware === true,
       browserWindowMode: ['remember', 'maximized', 'fullscreen', 'normal'].includes(saved.browserWindowMode) ? saved.browserWindowMode : 'remember',
       browserWindowState: ['normal', 'maximized', 'fullscreen'].includes(saved.browserWindowState) ? saved.browserWindowState : 'maximized' };
   }
   get() { return { ...this.value }; }
   set(value) {
     const next = { ...this.value };
+    if (Object.hasOwn(value, 'camoufoxGraphicsMode')) {
+      if (!GRAPHICS_MODES.includes(value.camoufoxGraphicsMode)) throw new Error('请选择有效的 Camoufox 图形渲染模式');
+      next.camoufoxGraphicsMode = value.camoufoxGraphicsMode;
+      next.camoufoxAutoSoftware = false;
+    }
     if (Object.hasOwn(value, 'socksViaSystemProxy')) {
       if (typeof value.socksViaSystemProxy !== 'boolean') throw new Error('请选择是否通过系统代理');
       next.socksViaSystemProxy = value.socksViaSystemProxy;
@@ -32,6 +40,11 @@ class Settings {
     const next = { ...this.value, browserWindowState: state };
     writeJSON(this.file, next);
     this.value = next;
+  }
+  rememberCamoufoxSoftware() {
+    if (this.value.camoufoxGraphicsMode !== 'auto' || this.value.camoufoxAutoSoftware) return;
+    const next = { ...this.value, camoufoxAutoSoftware: true };
+    writeJSON(this.file, next); this.value = next;
   }
   async route(host, port) {
     if (!this.value.socksViaSystemProxy) return null;

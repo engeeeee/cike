@@ -7,13 +7,27 @@
 ## 使用
 
 1. 使用 Windows 10 1803 或更新版本、Windows 11 的 Intel/AMD 64 位系统。
-2. 将 `CIKE-0.10.1-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
+2. 将 `CIKE-0.10.2-windows-x64.zip` 完整解压到本地可写目录，例如 `D:\Apps\CIKE`。
 3. 双击 `CIKE.exe`。运行时已随包提供，无需另装 Node.js。请保留同目录的 DLL、资源目录等文件。
 4. 在“设置”中下载 Chromium 内核，然后创建并打开环境。首次下载需要联网。
 
 本包没有 Windows 代码签名，系统可能显示未识别的发布者。可用随包的 `SHA256SUMS.txt` 核对文件。
 
 0.9.0 新增“内核模拟（Camoufox / Firefox）”，在内核中设置 CPU 和显卡标识，避免网页 API 替换。先在“设置 → Camoufox 指纹内核”下载约 1.3 GB 内核，再在新建/编辑环境的“指纹选项”选择内核模拟。Firefox 与 Chrome 登录数据独立，旧数据保留，切换后需要重新登录。原软件层模式继续保留。[硬件模拟范围与限制](HARDWARE.md)
+
+## Camoufox GPU / D3D11 崩溃（0.10.2）
+
+日志出现 `Failed to launch GPU process after 3 attempts`、`FEATURE_FAILURE_D3D11_NO_DEVICE` 或 `Failed to initialize CompositorD3D11 for SWGL` 时，表示图形设备或 GPU 子进程初始化失败。日志中的 `SW-WR + D3D11` 仍需要 D3D11 设备。
+
+在“设置 → Camoufox 指纹内核 → 图形渲染”选择：
+
+- **兼容模式（软件绘制）**：遇到启动或新窗口崩溃时优先选择，保存后重新打开环境。使用 CPU 合成，关闭 GPU 子进程和 SWGL 的 D3D11 上传路径；可能增加 CPU 占用并改变 Canvas/WebGL 等图形指纹。实际可用的 WebGL 能力仍取决于系统。
+- **自动**：默认保持正常加速策略；仅在识别到上述 Windows 图形启动崩溃时，保留相同环境和代理重试一次兼容模式。启动成功后记住选择，后续环境直接使用兼容绘制。代理或其他启动错误不会因此改为直连或无限重试。
+- **硬件加速**：恢复正常加速偏好。显卡驱动修复后可选择此项，或重新保存“自动”清除已记住的兼容选择，再重新打开环境。
+
+运行中的软件绘制环境会标记“兼容绘制”。更改渲染模式只对重新打开的环境生效，保留配置、Cookie、登录数据及内核位置，不需要删除环境或重新下载内核。
+
+自动恢复通过报告的崩溃文本进行故障注入验证，软件合成路径和新窗口行为在 Windows CI 的实际浏览器上验证；这不等于在每一种显卡、驱动和远程桌面环境上完成实测。
 
 ## Camoufox 启动修复（0.10.1）
 
@@ -66,7 +80,7 @@ npm run pack:win-x64
 
 ```text
 dist/CIKE-win32-x64/CIKE.exe
-dist/CIKE-0.10.1-windows-x64.zip
+dist/CIKE-0.10.2-windows-x64.zip
 dist/SHA256SUMS.txt
 ```
 
@@ -78,7 +92,7 @@ fork 后在 GitHub 的 Actions 页面启用工作流。`main`、`windows` 和 `w
 
 工作流在 Windows runner 上检查 API/凭据存储、代理与浏览器回归、硬件模拟及 Worker 一致性、最大化和全屏继承、CIKE 内核下载与版本检测、真实内核迁移和删除后的登录数据保留，以及源码和打包后桌面应用的设置操作。所有步骤通过后才上传应用。
 
-**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.10.1-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
+**Publish Windows Release** 可以复用已通过的 Windows 构建发布 Release。手动运行时填写构建运行 ID 与 `v0.10.2-windows.1` 形式的标签；工作流确认应用源码一致、校验压缩包后，上传应用与校验文件并发布。
 
 ## 验证范围与实机验收
 

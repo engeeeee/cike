@@ -11,7 +11,7 @@ test('window preferences migrate existing network settings and persist independe
   try {
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ socksViaSystemProxy: true }));
     const settings = new Settings(root);
-    assert.deepEqual(settings.get(), { socksViaSystemProxy: true, browserWindowMode: 'remember', browserWindowState: 'maximized' });
+    assert.deepEqual(settings.get(), { socksViaSystemProxy: true, camoufoxGraphicsMode: 'auto', camoufoxAutoSoftware: false, browserWindowMode: 'remember', browserWindowState: 'maximized' });
     settings.rememberWindowState('fullscreen');
     settings.set({ socksViaSystemProxy: false });
     assert.equal(new Settings(root).get().browserWindowState, 'fullscreen');

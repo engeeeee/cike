@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { privateDirectory, writePrivate } = require('./privatefiles');
 const { nativeConfig, nativeEnvironment, nativeExecutable } = require('./nativecore');
+const { graphicsPreferences } = require('./native-graphics');
 
 function windowExtension(directory, bridge) {
   const parent = path.join(directory, 'cike-window-extension');
@@ -27,24 +28,25 @@ function windowExtension(directory, bridge) {
   writePrivate(path.join(extension, 'background.js'), fs.readFileSync(path.join(__dirname, 'native-window-extension.js')));
   return extension;
 }
-function prepareWindowProxy(directory, host) {
+function prepareStartupPreferences(directory, preferences) {
   const file = path.join(directory, 'user.js');
   let contents = '';
   try {
     if (!fs.lstatSync(file).isFile()) throw new Error('Firefox user.js 不是普通文件');
     contents = fs.readFileSync(file, 'utf8');
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  // Camoufox's early environment preferences use the default branch. Existing
-  // user prefs can override them until Browser.enable, when the addon may
-  // already be fetching. Set just this managed preference before Firefox reads
-  // the profile; preserve all other user.js content and every login database.
+  // Set user-branch values before mirror-once graphics prefs are read. The
+  // early CAMOU_PREFS defaults alone cannot override an existing profile.
   contents = contents.replace(/\n?\/\/ CIKE window bridge BEGIN\r?\n[\s\S]*?\/\/ CIKE window bridge END\r?\n?/g, '');
-  writePrivate(file, contents + '\n// CIKE window bridge BEGIN\nuser_pref("network.proxy.no_proxies_on", ' + JSON.stringify(host) + ');\n// CIKE window bridge END\n');
+  contents = contents.replace(/\n?\/\/ CIKE native startup BEGIN\r?\n[\s\S]*?\/\/ CIKE native startup END\r?\n?/g, '');
+  const lines = Object.entries(preferences).map(([name, value]) => `user_pref(${JSON.stringify(name)}, ${JSON.stringify(value)});`);
+  writePrivate(file, contents + '\n// CIKE native startup BEGIN\n' + lines.join('\n') + '\n// CIKE native startup END\n');
 }
-async function launchNative({ dataDir, directory, profile, proxy, headless, downloadsDirectory, bridge }) {
+async function launchNative({ dataDir, directory, profile, proxy, headless, downloadsDirectory, bridge, graphicsMode = 'hardware' }) {
   const config = nativeConfig(profile);
   if (bridge) config.addons = [windowExtension(directory, bridge)];
   const preferences = {
+    ...graphicsPreferences(graphicsMode),
     'browser.download.folderList': 2, 'browser.download.useDownloadDir': true,
     'browser.download.dir': path.resolve(downloadsDirectory), 'browser.download.alwaysOpenPanel': true,
     'browser.startup.page': 0, 'browser.sessionstore.resume_from_crash': false,
@@ -56,7 +58,7 @@ async function launchNative({ dataDir, directory, profile, proxy, headless, down
     'media.peerconnection.ice.proxy_only': true, 'media.peerconnection.ice.no_host': true,
     'media.peerconnection.ice.default_address_only': true, 'network.http.http3.enable': false,
   });
-  prepareWindowProxy(directory, preferences['network.proxy.no_proxies_on']);
+  prepareStartupPreferences(directory, { ...graphicsPreferences(graphicsMode), 'network.proxy.no_proxies_on': preferences['network.proxy.no_proxies_on'] });
   const context = await require('playwright-native').firefox.launchPersistentContext(directory, {
     executablePath: nativeExecutable(dataDir), headless, viewport: null, acceptDownloads: true,
     ...(proxy ? { proxy: { ...proxy, bypass: bridge ? new URL(bridge.url).hostname : '' } } : {}),
