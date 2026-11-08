@@ -43,6 +43,9 @@ jobs:
       - name: Verify CIKE's Windows kernel installer
         if: ${{ !cancelled() }}
         run: node --test test/windows-runtime.test.js
+      - name: Verify native kernel migration, deletion and retained login data
+        if: ${{ !cancelled() }}
+        run: node --test test/native-storage-runtime.test.js
       - run: npm run test:desktop
         if: ${{ !cancelled() }}
       - run: npm run pack:win-x64

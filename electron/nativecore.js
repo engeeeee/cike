@@ -5,9 +5,16 @@ const path = require('path');
 const crypto = require('crypto');
 const { nativeAsset, nativeMarker, nativeExecutable, BUILD } = require('../src/nativecore');
 const { extractBrowserZip } = require('../src/zip');
-const { privateDirectory, writePrivate } = require('../src/privatefiles');
+const { writePrivate } = require('../src/privatefiles');
 const { downloadFile } = require('./chromium');
+const { NativeStorage, renameKernel } = require('../src/native-storage');
 const pending = new Map();
+async function verifyNativeExecutable(executable) {
+  const version = fs.readFileSync(path.join(path.dirname(executable), 'application.ini'), 'utf8').match(/^Version=(.+)$/m)?.[1].trim();
+  if (version !== BUILD) throw new Error('指纹内核版本不匹配');
+  const browser = await require('playwright-native').firefox.launch({ executablePath: executable, headless: true, timeout: 30000 });
+  await browser.close();
+}
 async function nativeStatus(dir) {
   try { return { installed: true, executable: nativeExecutable(dir), version: BUILD }; }
   catch { return { installed: false, executable: null, version: BUILD }; }
@@ -15,8 +22,9 @@ async function nativeStatus(dir) {
 async function install(dir, onProgress) {
   const current = await nativeStatus(dir);
   if (current.installed) return current.executable;
-  const asset = nativeAsset(), root = path.join(dir, 'browsers');
-  privateDirectory(root);
+  const storage = new NativeStorage(dir, { verify: verifyNativeExecutable });
+  const asset = nativeAsset(), root = storage.root();
+  fs.mkdirSync(root, { recursive: true });
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-camoufox-'));
   const staging = fs.mkdtempSync(path.join(root, '.camoufox-install-'));
   try {
@@ -30,14 +38,12 @@ async function install(dir, onProgress) {
     const basename = process.platform === 'win32' ? 'camoufox.exe' : 'camoufox';
     const executable = path.join(staging, basename);
     if (!fs.existsSync(executable)) throw new Error('压缩包中没有 Camoufox');
-    const version = fs.readFileSync(path.join(staging, 'application.ini'), 'utf8').match(/^Version=(.+)$/m)?.[1].trim();
-    if (version !== BUILD) throw new Error('指纹内核版本不匹配');
     // Probe the exact pinned Juggler/Playwright pair before publishing the marker.
-    const browser = await require('playwright-native').firefox.launch({ executablePath: executable, headless: true, timeout: 30000 });
-    await browser.close();
+    await verifyNativeExecutable(executable);
     const destination = path.join(root, `camoufox-${BUILD}-${path.basename(staging).slice(-6)}`);
-    fs.renameSync(staging, destination);
+    await renameKernel(staging, destination);
     const final = path.join(destination, basename);
+    storage.register(destination, BUILD);
     writePrivate(nativeMarker(dir), final + '\n');
     onProgress?.({ pct: 100, phase: '安装完成' });
     return final;
@@ -48,4 +54,4 @@ async function downloadNative(dir, onProgress) {
   const promise = install(dir, onProgress); pending.set(dir, promise);
   try { return await promise; } finally { pending.delete(dir); }
 }
-module.exports = { nativeStatus, downloadNative };
+module.exports = { nativeStatus, downloadNative, verifyNativeExecutable };

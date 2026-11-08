@@ -7,6 +7,8 @@ const path = require('path');
 const { _electron } = require('playwright');
 const { ProfileStore } = require('../src/store');
 const { ProxyStore } = require('../src/proxystore');
+const { NativeStorage, binary } = require('../src/native-storage');
+const { BUILD } = require('../src/nativecore');
 
 test('sandboxed desktop UI can authenticate, migrate profiles and protect secrets with safeStorage', { timeout: 120000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cike-desktop-'));
@@ -15,6 +17,13 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     fs.writeFileSync(path.join(dir, 'browsers/chromium-executable.txt'), process.env.LFB_CHROMIUM_EXECUTABLE);
   }
   const profiles = new ProfileStore(dir), proxies = new ProxyStore(dir);
+  const storage = new NativeStorage(dir), spare = path.join(storage.defaultRoot, `camoufox-${BUILD}-abc123`);
+  fs.mkdirSync(spare, { recursive: true });
+  fs.writeFileSync(path.join(spare, binary), 'unused-desktop-storage-fixture');
+  fs.writeFileSync(path.join(spare, 'application.ini'), `Version=${BUILD}\n`);
+  const spareEntry = storage.register(spare);
+  const customRoot = path.join(dir, '自定义 内核位置'); fs.mkdirSync(customRoot);
+  const retained = path.join(customRoot, 'my-files.txt'); fs.writeFileSync(retained, 'keep');
   // Re-signed ad-hoc packages can require interactive Keychain approval on
   // macOS. Exercise encryption in the stable source Electron binary; package
   // smoke tests use empty credentials and still verify sandbox/UI/migration.
@@ -72,6 +81,32 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     assert.equal((await updatedProfile).status(), 200);
     assert.equal(JSON.parse(fs.readFileSync(profiles.file))[created.id].fingerprintSeed, created.fingerprintSeed);
     await page.locator('[data-page="settings"]').click();
+    await page.locator(`[data-native-id="${spareEntry.id}"]`).waitFor();
+    assert.equal(await page.locator('#native-storage-root').textContent(), storage.defaultRoot);
+    await app.evaluate(({ dialog }, root) => {
+      globalThis.cikeDialogBackup = { open: dialog.showOpenDialog, message: dialog.showMessageBox };
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [root] });
+      dialog.showMessageBox = async (_window, options) => {
+        globalThis.cikeLastStorageDialog = options; return { response: 1 };
+      };
+    }, customRoot);
+    try {
+      await page.locator('#btn-native-location').click();
+      await page.waitForFunction(root => document.getElementById('native-storage-root').textContent === root, customRoot);
+      assert.equal(storage.root(), fs.realpathSync(customRoot));
+      assert.ok(fs.existsSync(spare));
+      await page.locator(`[data-native-remove="${spareEntry.id}"]`).click();
+      await page.locator(`[data-native-id="${spareEntry.id}"]`).waitFor({ state: 'detached' });
+      assert.equal(fs.existsSync(spare), false);
+      assert.equal(fs.readFileSync(retained, 'utf8'), 'keep');
+      assert.ok(fs.existsSync(profiles.file));
+      assert.match(await app.evaluate(() => globalThis.cikeLastStorageDialog.detail), /Cookie/);
+    } finally {
+      await app.evaluate(({ dialog }) => {
+        dialog.showOpenDialog = globalThis.cikeDialogBackup.open; dialog.showMessageBox = globalThis.cikeDialogBackup.message;
+        delete globalThis.cikeDialogBackup; delete globalThis.cikeLastStorageDialog;
+      });
+    }
     for (const mode of ['fullscreen', 'remember']) {
       await page.locator('#set-browser-window-mode').selectOption(mode);
       const savedSettings = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'PATCH');
@@ -136,6 +171,12 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     if (process.env.CIKE_CAMOUFOX_EXECUTABLE) {
       await kernelCard.locator('[data-act="open"]').click();
       await kernelCard.getByText('运行中', { exact: true }).waitFor({ timeout: 40000 });
+      await page.locator('[data-page="settings"]').click();
+      await page.waitForFunction(() => document.querySelector('#native-storage-notice').textContent.includes('请先关闭'));
+      assert.equal(await page.locator('#btn-native-location').isDisabled(), true);
+      const blocked = await page.evaluate(() => window.lfb.nativeStorageChange());
+      assert.equal(blocked.ok, false); assert.match(blocked.error, /关闭所有/);
+      await page.locator('[data-page="profiles"]').click();
       await kernelCard.locator('[data-act="close"]').click();
       await kernelCard.getByText('已关闭', { exact: true }).waitFor();
     }

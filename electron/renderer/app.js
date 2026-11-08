@@ -769,6 +769,7 @@ async function loadSettings() {
   } catch { /* ignore */ }
   await refreshChromiumStatus();
   await refreshNativeStatus();
+  await refreshNativeLibrary();
 }
 
 async function refreshNativeStatus() {
@@ -779,10 +780,11 @@ async function refreshNativeStatus() {
     button.disabled = state.nativeCore.installed;
     button.textContent = state.nativeCore.installed ? '指纹内核已安装' : '下载指纹内核';
   } catch (error) { status.textContent = error.message; }
+  syncKernelButtons();
 }
 async function startNativeDownload() {
-  const button = document.getElementById('btn-download-native'), progress = document.getElementById('native-progress');
-  button.disabled = true; progress.classList.remove('hidden');
+  const progress = document.getElementById('native-progress');
+  setKernelUiBusy(true); progress.classList.remove('hidden');
   window.lfb.onNativeProgress(value => {
     progress.querySelector('.bar').style.width = (value.pct || 0) + '%';
     document.getElementById('native-status').textContent = value.phase || `正在下载：${value.pct || 0}%`;
@@ -792,8 +794,8 @@ async function startNativeDownload() {
     if (!result.ok) throw new Error(result.error);
     toast('指纹内核安装完成');
   } catch (error) { toast('安装失败：' + error.message, true); }
-  progress.classList.add('hidden'); button.disabled = false;
-  await refreshNativeStatus();
+  progress.classList.add('hidden'); setKernelUiBusy(false);
+  await Promise.all([refreshNativeStatus(), refreshNativeLibrary()]);
 }
 
 async function refreshChromiumStatus() {
@@ -812,6 +814,7 @@ async function refreshChromiumStatus() {
     }
     updateBanner();
   } catch (e) { toast('检测内核状态失败：' + e.message, true); }
+  syncKernelButtons();
 }
 
 function updateBanner() {
@@ -820,9 +823,8 @@ function updateBanner() {
 }
 
 async function startChromiumDownload() {
-  const btn = document.getElementById('btn-download-browser');
   const bar = document.getElementById('browser-progress');
-  btn.disabled = true;
+  setKernelUiBusy(true);
   bar.classList.remove('hidden');
   const fill = bar.querySelector('.bar');
   window.lfb.onChromiumProgress((p) => { fill.style.width = (p.pct || 0) + '%'; });
@@ -832,7 +834,8 @@ async function startChromiumDownload() {
     toast('Chromium 下载完成');
   } catch (e) { toast('下载失败：' + e.message, true); }
   bar.classList.add('hidden');
-  await refreshChromiumStatus();
+  setKernelUiBusy(false);
+  await Promise.all([refreshChromiumStatus(), refreshNativeLibrary()]);
 }
 
 // ---------- 事件绑定 ----------

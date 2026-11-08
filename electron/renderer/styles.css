@@ -231,6 +231,12 @@ textarea.input { width: 100%; min-height: 110px; font-family: ui-monospace, SFMo
 .kv { font-size: 13px; display: grid; gap: 6px; color: var(--ink-soft); }
 .hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
 .hint code { background: var(--line-soft); padding: 1px 7px; border-radius: 5px; font-size: 11px; }
+.storage-path { font-size: 12px; overflow-wrap: anywhere; color: var(--ink-soft); }
+.storage-actions { flex-wrap: wrap; margin-top: 10px; }
+.native-storage-list { display: grid; gap: 10px; }
+.native-storage-entry { border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.native-storage-entry .row { flex-wrap: wrap; margin-top: 8px; }
+.native-storage-entry .hint { margin: 6px 0; }
 .progress { height: 6px; background: var(--line-soft); border-radius: 4px; overflow: hidden; margin: 12px 0; }
 .progress .bar { height: 100%; width: 0; background: var(--ink); transition: width .2s; border-radius: 4px; }
 
