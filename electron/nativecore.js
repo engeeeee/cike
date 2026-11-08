@@ -29,7 +29,14 @@ async function install(dir, onProgress) {
   const staging = fs.mkdtempSync(path.join(root, '.camoufox-install-'));
   try {
     const archive = path.join(temporary, asset.name);
-    await downloadFile(asset.url, archive, onProgress, 0, 2 * 1024 * 1024 * 1024);
+    try { await downloadFile(asset.url, archive, onProgress, 0, 2 * 1024 * 1024 * 1024); }
+    catch (error) {
+      if (!asset.apiUrl || !/HTTP 50\d|ECONNRESET|ETIMEDOUT|超时/i.test(error.message)) throw error;
+      // Same pinned official asset, via GitHub's binary asset API when its
+      // release download gateway is unavailable. Verify the same SHA below.
+      fs.rmSync(archive, { force: true });
+      await downloadFile(asset.apiUrl, archive, onProgress, 0, 2 * 1024 * 1024 * 1024);
+    }
     const hash = crypto.createHash('sha256');
     for await (const chunk of fs.createReadStream(archive)) hash.update(chunk);
     if (hash.digest('hex') !== asset.sha256) throw new Error('指纹内核 SHA-256 校验失败，未安装');

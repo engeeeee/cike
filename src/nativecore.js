@@ -14,7 +14,8 @@ const ASSETS = {
 function nativeAsset(platform = process.platform, arch = process.arch) {
   const asset = ASSETS[`${platform}-${arch}`];
   if (!asset) throw new Error('指纹内核目前支持 Windows x64 和 Linux x64/ARM64');
-  return { name: asset[0], sha256: asset[1], url: `https://github.com/daijro/camoufox/releases/download/${RELEASE}/${asset[0]}` };
+  return { name: asset[0], sha256: asset[1], url: `https://github.com/daijro/camoufox/releases/download/${RELEASE}/${asset[0]}`,
+    ...(platform === 'win32' && arch === 'x64' ? { apiUrl: 'https://api.github.com/repos/daijro/camoufox/releases/assets/690066539' } : {}) };
 }
 function nativeMarker(dir) { return path.join(dir, 'browsers', 'camoufox-executable.txt'); }
 function nativeExecutable(dir) {

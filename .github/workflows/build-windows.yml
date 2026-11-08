@@ -29,7 +29,7 @@ jobs:
         shell: pwsh
         run: |
           for ($attempt = 1; $attempt -le 3; $attempt++) {
-            node node_modules/electron/install.js
+            node scripts/install-electron-ci.js
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -eq 3) { exit $LASTEXITCODE }
             Start-Sleep -Seconds (5 * $attempt)

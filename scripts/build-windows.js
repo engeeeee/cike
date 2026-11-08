@@ -16,6 +16,9 @@ async function main() {
   const [directory] = await packager({
     dir: root, name: 'CIKE', executableName: 'CIKE', platform: 'win32', arch: 'x64',
     electronVersion: manifest.devDependencies.electron, appVersion: manifest.version,
+    // The locked Electron npm package already includes the official hashes.
+    // Keep full verification without fetching SHASUMS256.txt on every build.
+    download: { checksums: require('electron/checksums.json') },
     icon, out, overwrite: true, prune: true,
     ignore: [/^\/(test|docs|scripts|dist|data|\.browsers|\.github|\.git)(\/|$)/,
       /^\/build-windows\.cmd$/, /\.zip$/i, /\.log$/i],

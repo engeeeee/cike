@@ -50,7 +50,7 @@ async function chromiumStatus(dir) {
 async function downloadFile(url, dest, onProgress, redirects = 0, maxBytes = 1024 * 1024 * 1024) {
   if (redirects > 5 || new URL(url).protocol !== 'https:') throw new Error('内核下载必须使用 HTTPS，且不能无限重定向');
   const response = await new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'CIKE' } }, resolve);
+    const req = https.get(url, { headers: { 'User-Agent': 'CIKE', Accept: 'application/octet-stream' } }, resolve);
     req.on('error', reject);
     req.setTimeout(120000, () => req.destroy(new Error('内核下载超时')));
   });

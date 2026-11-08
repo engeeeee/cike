@@ -46,7 +46,11 @@ test('Camoufox native windows maximize and inherit a manual native fullscreen ch
       const a = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native' });
       const b = backend.store.create({ fingerprintMode: 'kernel', gpuPreset: 'native', locale: 'en-US', timezone: 'UTC', proxy: { server: `http://127.0.0.1:${proxy.address().port}` } });
       await manager.open(a.id); const context = manager.getContext(a.id), page = context.pages()[0];
-      await until(() => page.evaluate(() => Math.abs(outerWidth - screen.availWidth) <= 20 && Math.abs(outerHeight - screen.availHeight) <= 20), Boolean);
+      try { await until(() => page.evaluate(() => Math.abs(outerWidth - screen.availWidth) <= 20 && Math.abs(outerHeight - screen.availHeight) <= 20), Boolean); }
+      catch (error) {
+        const bounds = await page.evaluate(() => ({ width: outerWidth, height: outerHeight, available: [screen.availWidth, screen.availHeight], screen: [screen.width, screen.height], dpr: devicePixelRatio }));
+        throw new Error(error.message + ': ' + JSON.stringify({ bounds, warning: manager.windowWarning(a.id), mode: backend.settings.get().browserWindowState }));
+      }
       fullscreen = true;
       await until(() => backend.settings.get().browserWindowState, state => state === 'fullscreen');
       await until(() => full(page), Boolean);
