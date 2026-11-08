@@ -1,0 +1,67 @@
+name: Build Windows core diagnostic
+
+on:
+  push:
+    branches: [windows-core-compatibility]
+    paths: [scripts/windows-core-report.cs, scripts/build-core-report.js, .github/workflows/windows-core-report.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Fetch and verify the pinned official core for reference hashes
+        run: node scripts/install-native-ci.js
+      - name: Build and self-test the standalone diagnostic
+        run: node scripts/build-core-report.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-core-diagnostic
+          path: |
+            dist/CIKE-Camoufox-Diagnostic-windows.zip
+            dist/DIAGNOSTIC-SHA256SUMS.txt
+          if-no-files-found: error
+  publish:
+    needs: report
+    if: github.repository == 'engeeeee/cike'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-core-diagnostic
+          path: report-files
+      - run: sha256sum --check --strict DIAGNOSTIC-SHA256SUMS.txt
+        working-directory: report-files
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.10.3-kernel-diagnostics.1
+          target_commitish: ${{ github.sha }}
+          name: Camoufox Windows 内核诊断工具
+          prerelease: true
+          make_latest: 'false'
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: |
+            report-files/CIKE-Camoufox-Diagnostic-windows.zip
+            report-files/DIAGNOSTIC-SHA256SUMS.txt
+          body: |
+            用于定位「Camoufox 单独启动也出现 tab crashed」的 Windows 原生异常。
+
+            下载并完整解压 `CIKE-Camoufox-Diagnostic-windows.zip`，双击 `CIKE-Core-Diagnostic.exe`，等待桌面生成 `CIKE-Camoufox-report-日期时间.json`，将报告发回用于分析。
+
+            包含系统内部版本、CPU/显卡与驱动、内存/提交额度、官方内核关键文件完整性、该内核的近期故障模块和异常码。工具不会启动浏览器、修改注册表或环境、读取 Cookie/密码/代理配置，也不会上传数据。保留原环境及登录数据。
+
+            **这是诊断工具，不是宣称已经修复内核崩溃的 CIKE 更新。** 内核基准文件来自校验过 SHA-256 的官方 158.0.1-beta.41 Windows 包，程序已在 Windows 构建并完成自检。应用正式版仍为 0.10.3。
