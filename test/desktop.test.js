@@ -163,8 +163,9 @@ test('sandboxed desktop UI can authenticate, migrate profiles and protect secret
     assert.equal(await page.locator('#n-software-memory').isVisible(), false);
     await page.locator('#n-hardware-cpu').selectOption('4');
     await page.locator('#n-hardware-gpu').selectOption('native');
+    const kernelCreated = page.waitForResponse(response => response.url().endsWith('/api/profiles') && response.request().method() === 'POST');
     await page.locator('#n-save').click();
-    await page.getByText('环境已创建', { exact: true }).waitFor();
+    assert.equal((await kernelCreated).status(), 200);
     const kernel = Object.values(JSON.parse(fs.readFileSync(profiles.file))).find(record => record.fingerprintMode === 'kernel');
     assert.equal(kernel.hardwareConcurrency, 4); assert.equal(kernel.deviceMemory, null); assert.equal(kernel.canvasNoise, false); assert.equal(kernel.audioNoise, false);
     const kernelCard = page.locator('.env-card').filter({ has: page.locator('.name', { hasText: /^3$/ }) });
