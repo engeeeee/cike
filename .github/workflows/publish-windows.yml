@@ -10,24 +10,24 @@ name: Publish Windows Release
         description: Successful Windows build run ID
         type: string
         required: true
-        default: '42453316414'
+        default: '42462367896'
       tag:
         description: Windows release tag
         type: string
         required: true
-        default: v0.10.1-windows.1
+        default: v0.10.2-windows.1
 
 permissions:
   actions: read
   contents: write
 
 concurrency:
-  group: windows-release-${{ inputs.tag || 'v0.10.1-windows.1' }}
+  group: windows-release-${{ inputs.tag || 'v0.10.2-windows.1' }}
   cancel-in-progress: false
 
 env:
-  SOURCE_RUN: ${{ inputs.source_run || '42453316414' }}
-  RELEASE_TAG: ${{ inputs.tag || 'v0.10.1-windows.1' }}
+  SOURCE_RUN: ${{ inputs.source_run || '42462367896' }}
+  RELEASE_TAG: ${{ inputs.tag || 'v0.10.2-windows.1' }}
 
 jobs:
   release:
@@ -106,15 +106,15 @@ jobs:
             - 下载 `${{ steps.source.outputs.filename }}`，完整解压后双击 `CIKE.exe`；首次在「设置」下载 Chromium。
             - 数据默认保存在 `%LOCALAPPDATA%\CIKE`，程序更新时保留。
 
-            修复 Camoufox 环境打开后提示「指纹内核窗口组件未能连接，请重试」并被关闭的问题。
+            本版针对 Camoufox 的 GPU / D3D11 启动崩溃增加图形兼容模式。出现「Failed to launch GPU process after 3 attempts」「FEATURE_FAILURE_D3D11_NO_DEVICE」或开新窗口崩溃时，更新后先到「设置 → Camoufox 指纹内核 → 图形渲染」选择「兼容模式（软件绘制）」并保存，再重新打开环境。
 
-            窗口同步改用每次启动独立的本机 IPv4 回环连接，并在 Firefox 和环境代理两层仅排除这一专用地址，避免本地域名解析及继承代理干扰。启动时生成新的扩展资源，连接超时后自动重试。窗口组件异常时保留浏览器，环境卡片显示同步提示，恢复后自动消失；网站请求继续使用当前环境代理。
+            兼容模式使用 CPU 合成窗口，关闭 GPU 子进程、硬件合成和 SWGL 的 D3D11 上传路径。软件绘制可能增加 CPU 占用并改变 Canvas/WebGL 等图形指纹，实际 WebGL 能力取决于系统。显卡标识设置继续保留，网页接口保持原生。
 
-            更新方法：完全退出旧版 CIKE 和所有环境，将新版完整解压到新目录，再启动 CIKE.exe。继续使用已有的 Camoufox 内核和环境，不需要重新下载内核、移动安装位置或删除环境。Cookie、登录数据和其他用户设置保留。
+            默认「自动」仅在识别到 Windows 图形启动崩溃时，以相同环境和代理重试一次兼容模式，成功后记住选择。也可选择硬件加速，或重新保存自动清除记忆。运行中的兼容环境会显示「兼容绘制」。此功能不会以取消代理或降低内容沙盒来重试。
 
-            0.10.0 的内核自定义位置、验证迁移和副本删除功能继续保留。[Windows 使用说明](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/WINDOWS.md)。
+            更新方法：完全退出旧版 CIKE 和所有环境，将新版完整解压到新目录，再启动 CIKE.exe。现有 Camoufox 内核、保存位置、环境、Cookie 和登录数据继续使用，无需重新下载或删除环境。0.10.0 的内核存储管理和 0.10.1 的窗口连接修复继续保留。[Windows 使用说明](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/WINDOWS.md) · [硬件模拟范围](https://github.com/engeeeee/cike/blob/${{ github.sha }}/docs/HARDWARE.md)。
 
-            已通过 Windows CI：认证 SOCKS5 与继承代理设置下的窗口连接、连接阻断超过原 20 秒期限后继续运行、恢复连接和原生全屏、中文/空格路径和旧环境重开后的登录数据保留，以及原有代理、指纹、窗口、下载、内核管理、源码和打包应用回归。[验证记录](${{ steps.source.outputs.build_url }})。
+            Windows CI 验证了软件绘制下无 GPU 子进程、中文内核路径、连续新窗口和全屏、多环境和重启登录数据保留、模式恢复，以及原有 API、代理、指纹、下载、内核管理和源码/打包应用回归。自动回退使用报告的崩溃文本做故障注入，不等于在每种物理显卡、驱动或远程桌面环境上完成实测。[验证记录](${{ steps.source.outputs.build_url }})。
 
             这是独立 Windows 移植版，未签名，更新需手动替换。校验文件见 `SHA256SUMS.txt`。
       - name: Publish the completed release
