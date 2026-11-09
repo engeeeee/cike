@@ -22,7 +22,7 @@
     "start": "node src/server.js",
     "electron": "electron .",
     "pack:mac-arm64": "electron-packager . CIKE --icon=electron/assets/icon.icns --platform=darwin --arch=arm64 --out=dist --overwrite --prune --ignore=\"^/(test|.browsers|dist|.*.zip$)\"",
-    "test:unit": "node --test --test-concurrency=1 test/windows.test.js test/windowstate.test.js test/hardware.test.js test/kernel.test.js test/native-graphics.test.js test/native-recovery.test.js test/native-storage.test.js test/security.test.js",
+    "test:unit": "node --test --test-concurrency=1 test/windows.test.js test/windowstate.test.js test/hardware.test.js test/kernel.test.js test/native-graphics.test.js test/native-health.test.js test/native-recovery.test.js test/native-storage.test.js test/security.test.js",
     "pack:win-x64": "node scripts/build-windows.js"
   },
   "type": "commonjs",

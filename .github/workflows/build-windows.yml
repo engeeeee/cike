@@ -37,6 +37,8 @@ jobs:
       - run: npm run test:unit
       - name: Install and verify pinned native fingerprint core
         run: node scripts/install-native-ci.js
+      - name: Verify the kernel can create and paint content pages
+        run: node --test test/native-health.test.js
       - run: npx playwright install chromium
       - name: Use full Chromium for regression tests
         shell: pwsh

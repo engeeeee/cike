@@ -14,7 +14,7 @@ async function within(task, milliseconds) {
 function ownedBrowser(context) {
   // These are in-process Playwright instances, pinned in package-lock.json.
   // Never search for/terminate a process by its executable name.
-  try { return context._connection.toImpl(context)._browser.options.browserProcess; }
+  try { const implementation = context._connection.toImpl(context); return (implementation._browser || implementation).options.browserProcess; }
   catch { return null; }
 }
 async function stopContext(context, timeout = 4000) {
