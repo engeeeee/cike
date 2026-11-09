@@ -182,6 +182,7 @@ public static partial class CikeCoreReport {
     static object AccessReport(string executable, Dictionary<string, object> reference) {
         var report=Map(); if (!File.Exists(executable)) { report["status"]="no-kernel"; return report; }
         var images=new List<object>(); string root=Path.GetDirectoryName(executable); LowReadToken low=null;
+        try { var drive=new DriveInfo(Path.GetPathRoot(executable)); report["fileSystem"]=drive.DriveFormat; report["driveType"]=drive.DriveType.ToString(); } catch (Exception e) { report["volumeError"]=e.GetType().Name; }
         try {
             try { low=new LowReadToken(); report["lowToken"]=true; } catch (Exception e) { report["lowToken"]=false; Error("low-read-token", e); }
             foreach (Dictionary<string, object> file in (IEnumerable)reference["files"]) {
@@ -189,6 +190,7 @@ public static partial class CikeCoreReport {
                 string full=Path.GetFullPath(Path.Combine(root, name.Replace('/', Path.DirectorySeparatorChar)));
                 if (!full.StartsWith(Path.GetFullPath(root).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException();
                 var row=Map(); row["name"]=name; row["location"]="kernel"; row["currentToken"]=ImageAccess(full, IntPtr.Zero);
+                if (File.Exists(full)) row["attributes"]=(uint)File.GetAttributes(full);
                 if (low != null) row["lowToken"]=ImageAccess(full, low.Handle); row["permissions"]=AccessDescriptor(full, false); images.Add(row);
             }
             string system=Environment.GetFolderPath(Environment.SpecialFolder.System);
@@ -333,11 +335,16 @@ public static partial class CikeCoreReport {
         return result;
     }
     static void AccessSelfTest() {
+        Console.WriteLine("Checking Windows image execute access, low token and log redaction");
         string root=Path.Combine(Path.GetTempPath(), "cike-access-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         try {
             string file=Path.Combine(root, "fixture.exe"); File.Copy(typeof(CikeCoreReport).Assembly.Location, file);
-            if (Text(ImageAccess(file, IntPtr.Zero)["status"]) != "mapped") throw new Exception("Image mapping fixture failed");
-            using (var low=new LowReadToken()) if (Text(ImageAccess(file, low.Handle)["status"]) != "mapped") throw new Exception("Low-token image mapping fixture failed");
+            var initial=ImageAccess(file,IntPtr.Zero);
+            if (Text(initial["status"]) != "mapped") throw new Exception("Image mapping fixture failed: " + Json.Serialize(initial));
+            using (var low=new LowReadToken()) {
+                var access=ImageAccess(file,low.Handle);
+                if (Text(access["status"]) != "mapped") throw new Exception("Low-token image mapping fixture failed: " + Json.Serialize(access));
+            }
             var original=File.GetAccessControl(file, AccessControlSections.Access);
             try {
                 var denied=File.GetAccessControl(file, AccessControlSections.Access); denied.AddAccessRule(new FileSystemAccessRule(WindowsIdentity.GetCurrent().User, FileSystemRights.ExecuteFile, AccessControlType.Deny)); File.SetAccessControl(file, denied);

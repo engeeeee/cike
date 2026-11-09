@@ -303,7 +303,13 @@ public static partial class CikeCoreReport {
             Console.WriteLine("诊断已保存到：" + output);
             Console.WriteLine("请将这份 JSON 报告发回。工具没有修改现有环境、内核权限或系统安全设置。");
             return 0;
-        } catch (Exception e) { Console.Error.WriteLine("Diagnostic failed: " + e.GetType().Name + " / 0x" + e.HResult.ToString("X8")); return 1; }
+        } catch (Exception e) {
+            Console.Error.WriteLine("Diagnostic failed: " + e.GetType().Name + " / 0x" + e.HResult.ToString("X8"));
+            // Developer-only fixture failures contain no user report. Keep the
+            // normal interactive error path free of paths and command lines.
+            if (args.Length==1 && args[0]=="--self-test") Console.Error.WriteLine(e.ToString());
+            return 1;
+        }
         finally { if (pause) { Console.WriteLine("按回车关闭窗口"); Console.ReadLine(); } }
     }
 }
