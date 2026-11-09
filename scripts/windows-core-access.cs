@@ -168,6 +168,7 @@ public static partial class CikeCoreReport {
             foreach (FileSystemAccessRule rule in acl.GetAccessRules(true, true, typeof(SecurityIdentifier))) {
                 var item=Map(); item["principal"]=Principal((SecurityIdentifier)rule.IdentityReference); item["type"]=rule.AccessControlType.ToString();
                 item["rights"]="0x" + ((uint)rule.FileSystemRights).ToString("X8"); item["inherited"]=rule.IsInherited; rules.Add(item);
+                item["inheritance"]=rule.InheritanceFlags.ToString(); item["propagation"]=rule.PropagationFlags.ToString();
             }
             row["rules"]=rules.ToArray();
         } catch (Exception e) { row["aclError"]=e.GetType().Name; }
@@ -175,7 +176,9 @@ public static partial class CikeCoreReport {
         try {
             uint code=GetNamedSecurityInfoW(file, 1, 0x10, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out sacl, out descriptor);
             if (code != 0) row["labelError"]=code;
-            else { uint size; if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 0x10, out text, out size)) row["mandatoryLabel"]=Marshal.PtrToStringUni(text); }
+            // GetNamedSecurityInfo returned only the label portion of the
+            // SACL. Serialize that SACL explicitly, including on Windows 10.
+            else { uint size; if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 8, out text, out size)) row["mandatoryLabel"]=Marshal.PtrToStringUni(text); }
         } finally { if (text != IntPtr.Zero) LocalFree(text); if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
         return row;
     }

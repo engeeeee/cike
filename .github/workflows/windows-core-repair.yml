@@ -1,0 +1,69 @@
+name: Build Windows core repair
+
+on:
+  push:
+    branches: [windows-core-compatibility]
+    paths: [scripts/windows-core-report.cs, scripts/windows-core-access.cs, scripts/windows-core-repair.cs, scripts/build-core-repair.js, .github/workflows/windows-core-repair.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Fetch and verify the pinned official kernel
+        run: node scripts/install-native-ci.js
+      - name: Reproduce native access denial and verify the repair and rollback
+        run: node scripts/build-core-repair.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-core-repair
+          path: |
+            dist/CIKE-Camoufox-Repair-windows.zip
+            dist/REPAIR-SHA256SUMS.txt
+          if-no-files-found: error
+  publish:
+    needs: repair
+    if: github.repository == 'engeeeee/cike'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-core-repair
+          path: repair-files
+      - run: sha256sum --check --strict REPAIR-SHA256SUMS.txt
+        working-directory: repair-files
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.10.3-kernel-repair.1
+          target_commitish: ${{ github.sha }}
+          name: Camoufox 内核目录修复工具
+          prerelease: true
+          make_latest: 'false'
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          files: |
+            repair-files/CIKE-Camoufox-Repair-windows.zip
+            repair-files/REPAIR-SHA256SUMS.txt
+          body: |
+            针对诊断中“低完整性令牌读取当前内核被拒绝，系统 DLL 正常，内容进程以 0xC0000022 退出”的目录访问故障。
+
+            完全退出 CIKE，下载并完整解压 ZIP，双击 CIKE-Core-Repair.exe。无需删除原内核或环境，也无需重装 CIKE。
+
+            工具把现有内核复制到系统盘 CIKE 默认内核目录，为新副本建立私有目录权限，逐文件校验，并验证沙箱读取、默认/软件离线渲染及两个实际窗口。全部通过后才切换当前内核及下载位置。旧副本、原设置备份、全部已有环境与登录数据保留。失败不切换，会生成桌面结果报告。
+
+            仅为新副本设置中等完整性和私有权限，不修改原目录、系统目录、沙箱、杀毒软件或全局安全策略。测试仅打开本地 data: 页面，强制不可用本机代理并禁止直连回退；不打开已有环境，不读取密码或代理配置，不上传数据。
+
+            已在 Windows 用真实官方内核复现原生 STATUS_ACCESS_DENIED，并验证新副本恢复、原环境保留及切换中途失败的回滚。物理电脑是否适用以工具的本机验证结果为准；如果是路径之外的访问控制阻止启动，工具会保留原设置。

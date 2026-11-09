@@ -47,7 +47,7 @@ jobs:
         working-directory: report-files
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.10.3-kernel-diagnostics.4
+          tag_name: v0.10.3-kernel-diagnostics.5
           target_commitish: ${{ github.sha }}
           name: Camoufox Windows 内核诊断工具
           prerelease: true
@@ -62,7 +62,7 @@ jobs:
 
             下载并完整解压 `CIKE-Camoufox-Diagnostic-windows.zip`，双击 `CIKE-Core-Diagnostic.exe`。工具会自动检查权限、验证离线渲染，并短暂打开两个临时浏览器窗口。约一分钟、最多约两分钟后，将桌面生成的 `CIKE-Camoufox-report-日期时间.json` 发回；无需手动反复打开 CIKE。
 
-            针对 `0xC0000022 / STATUS_ACCESS_DENIED` 检查 DLL 读取和执行权限（含低完整性启动令牌）、目录权限及强制完整性标签、Code Integrity / AppLocker / Defender 等相关拦截记录。第四版在默认/软件离线渲染验证之外，分别观察默认/软件实际窗口的原生子进程，以区分无窗口测试与用户打开窗口的情况；窗口存在本身不会被当成页面渲染成功。仅 SHA-256 与官方基准一致的内核才会被自动测试。
+            针对 `0xC0000022 / STATUS_ACCESS_DENIED` 检查 DLL 读取和执行权限（含低完整性启动令牌）、目录权限及强制完整性标签、Code Integrity / AppLocker / Defender 等相关拦截记录。本版补充目录权限继承标记，并显式输出强制完整性标签。在默认/软件离线渲染验证之外，分别观察默认/软件实际窗口的原生子进程，以区分无窗口测试与用户打开窗口的情况；窗口存在本身不会被当成页面渲染成功。仅 SHA-256 与官方基准一致的内核才会被自动测试。
 
             临时环境只打开本地 data: 页面，强制不可用的本机代理并禁止直连回退。原有浏览器沙箱保持启用；不打开已有环境，不读取 Cookie、密码或代理配置，不修改内核、文件权限、注册表或系统安全设置，不上传数据。测试进程独立放入 Windows Job，超时只清理本工具创建的进程树。
 
