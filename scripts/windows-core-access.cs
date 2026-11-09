@@ -352,8 +352,14 @@ public static partial class CikeCoreReport {
                 // Windows loader has permission to execute/map the DLL.
                 Hash(file); var observed=ImageAccess(file, IntPtr.Zero);
                 if (Text(observed["status"]) != "open-denied" || Convert.ToInt32(observed["win32"]) != 5) throw new Exception("Execute-denied fixture was not detected");
-            } finally { File.SetAccessControl(file, original); }
-            if (Text(ImageAccess(file, IntPtr.Zero)["status"]) != "mapped") throw new Exception("ACL fixture restoration failed");
+            } finally {
+                // File.SetAccessControl persists only sections marked modified;
+                // an untouched snapshot would silently leave the deny ACE.
+                var restored=new FileSecurity(); restored.SetSecurityDescriptorBinaryForm(original.GetSecurityDescriptorBinaryForm(),AccessControlSections.Access);
+                File.SetAccessControl(file,restored);
+            }
+            var after=ImageAccess(file,IntPtr.Zero);
+            if (Text(after["status"]) != "mapped") throw new Exception("ACL fixture restoration failed: " + Json.Serialize(after));
             string xml="<Event><System><EventID>3077</EventID></System><EventData><Data Name='FileName'>D:\\private\\xul.dll</Data><Data Name='Status'>0xc0000022</Data><Data Name='URL'>https://secret.invalid/</Data><Data Name='UserName'>private-person</Data></EventData></Event>";
             string result=Json.Serialize(SecurityRecord(xml, @"D:\private\camoufox.exe"));
             if (!result.Contains("xul.dll") || !result.Contains("0xc0000022") || result.Contains("private") || result.Contains("secret")) throw new Exception("Security event redaction failed");
