@@ -17,7 +17,6 @@ public static class CikeCoreRepair {
 
 public static partial class CikeCoreReport {
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string text, uint revision, out IntPtr descriptor, out uint size);
-    [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetSecurityDescriptorSacl(IntPtr descriptor, out bool present, out IntPtr sacl, out bool inherited);
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode)] static extern uint SetNamedSecurityInfoW(string name, int type, uint information, IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl);
     class KernelItem { public string Relative; public long Bytes; public bool Directory; }
     static bool SamePath(string first,string second) { return String.Equals(Path.GetFullPath(first).TrimEnd('\\'),Path.GetFullPath(second).TrimEnd('\\'),StringComparison.OrdinalIgnoreCase); }
@@ -185,6 +184,8 @@ public static partial class CikeCoreReport {
             report["beforeExecutable"]=ImageAccess(executable,low.Handle);
             report["beforeXul"]=ImageAccess(Path.Combine(source,"xul.dll"),low.Handle);
             report["sourcePermissions"]=AccessDescriptor(source,true);
+            report["sourceExecutablePermissions"]=AccessDescriptor(executable,false);
+            report["sourceXulPermissions"]=AccessDescriptor(Path.Combine(source,"xul.dll"),false);
             try {
                 PrivateRepairDirectory(destination);
                 // Test a small real executable before copying the whole core.
@@ -254,8 +255,10 @@ public static partial class CikeCoreReport {
             MediumReadOnlyLabel(labelFile,false,true);
             using (var low=new LowReadToken()) {
                 if (Text(ImageAccess(labelFile,IntPtr.Zero)["status"])!="mapped" || Text(ImageAccess(labelFile,low.Handle)["status"])!="open-denied") throw new Exception("Mandatory read/execute denial fixture failed");
-                string label=Json.Serialize(AccessDescriptor(labelFile,false));
-                if (!label.Contains("NR") || !label.Contains("NX") || !label.Contains("ME")) throw new Exception("Mandatory label was not exported");
+                var permissions=(Dictionary<string,object>)AccessDescriptor(labelFile,false); bool found=false; object labels;
+                if (permissions.TryGetValue("mandatoryLabels",out labels)) foreach (Dictionary<string,object> label in (IEnumerable)labels)
+                    if (Text(label["sid"])=="S-1-16-8192" && Text(label["mask"])=="0x00000007") found=true;
+                if (!found) throw new Exception("Mandatory label was not exported: "+Json.Serialize(permissions));
                 string clean=Path.Combine(root,"clean.exe"); CopyRepairFile(labelFile,clean);
                 if (Hash(labelFile)!=Hash(clean) || Text(ImageAccess(clean,low.Handle)["status"])!="mapped") throw new Exception("Clean copy retained denied source label");
             }

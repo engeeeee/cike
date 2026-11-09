@@ -267,14 +267,14 @@ public static partial class CikeCoreReport {
             if (args.Length == 2 && args[0] == "--exit-fixture") { Thread.Sleep(500); return Int32.Parse(args[1]); }
             if (args.Length == 1 && args[0] == "--self-test") { SelfTest(); return 0; }
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("CIKE 内核诊断 v5（执行权限、离线渲染与实际窗口观察）");
+            Console.WriteLine("CIKE 内核诊断 v6（执行权限、离线渲染与实际窗口观察）");
             Console.WriteLine("正在读取系统错误和校验内核文件，请稍候…");
             string executable = FindKernel(), output = ""; bool probe = pause;
             for (int i = 0; i < args.Length; i++) { if (args[i] == "--kernel" && i + 1 < args.Length) executable = args[++i]; else if (args[i] == "--output" && i + 1 < args.Length) output = args[++i]; else if (args[i] == "--probe") probe = true; else throw new ArgumentException("Invalid argument"); }
             Dictionary<string, object> reference;
             using (var resource = typeof(CikeCoreReport).Assembly.GetManifestResourceStream("CIKE.KernelHashes.json"))
             using (var reader = new StreamReader(resource, Encoding.UTF8)) reference = Json.Deserialize<Dictionary<string, object>>(reader.ReadToEnd());
-            var report = Map(); report["format"] = 1; report["toolVersion"] = 5; report["time"] = DateTime.UtcNow.ToString("o");
+            var report = Map(); report["format"] = 1; report["toolVersion"] = 6; report["time"] = DateTime.UtcNow.ToString("o");
             report["os"] = Query("SELECT Version,BuildNumber,OSArchitecture FROM Win32_OperatingSystem", new string[] { "Version", "BuildNumber", "OSArchitecture" });
             report["cpu"] = Query("SELECT Name,NumberOfCores,NumberOfLogicalProcessors FROM Win32_Processor", new string[] { "Name", "NumberOfCores", "NumberOfLogicalProcessors" });
             report["graphics"] = Query("SELECT Name,DriverVersion FROM Win32_VideoController", new string[] { "Name", "DriverVersion" });

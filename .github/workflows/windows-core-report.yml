@@ -33,7 +33,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: report
-    if: github.repository == 'engeeeee/cike'
+    if: github.repository == 'engeeeee/cike' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,7 +47,7 @@ jobs:
         working-directory: report-files
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.10.3-kernel-diagnostics.5
+          tag_name: v0.10.3-kernel-diagnostics.6
           target_commitish: ${{ github.sha }}
           name: Camoufox Windows 内核诊断工具
           prerelease: true

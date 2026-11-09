@@ -34,6 +34,8 @@ public static partial class CikeCoreReport {
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode)] static extern uint GetNamedSecurityInfoW(string name, int type, uint information, IntPtr owner, IntPtr group, IntPtr dacl, out IntPtr sacl, out IntPtr descriptor);
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool ConvertSecurityDescriptorToStringSecurityDescriptorW(IntPtr descriptor, uint revision, uint information, out IntPtr text, out uint length);
     [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr value);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetSecurityDescriptorSacl(IntPtr descriptor, out bool present, out IntPtr sacl, out bool inherited);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetAce(IntPtr acl, uint index, out IntPtr ace);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern uint QueryDosDeviceW(string device, StringBuilder target, int size);
     [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr process, int information, IntPtr buffer, uint size, out uint needed);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessMitigationPolicy(IntPtr process, int policy, out uint flags, UIntPtr size);
@@ -178,7 +180,22 @@ public static partial class CikeCoreReport {
             if (code != 0) row["labelError"]=code;
             // GetNamedSecurityInfo returned only the label portion of the
             // SACL. Serialize that SACL explicitly, including on Windows 10.
-            else { uint size; if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 8, out text, out size)) row["mandatoryLabel"]=Marshal.PtrToStringUni(text); }
+            else {
+                uint size;
+                if (ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor,1,8,out text,out size)) row["mandatoryLabel"]=Marshal.PtrToStringUni(text);
+                else row["labelSerializationError"]=Marshal.GetLastWin32Error();
+                bool present,inherited; IntPtr labels; var entries=new List<object>();
+                if (GetSecurityDescriptorSacl(descriptor,out present,out labels,out inherited) && present && labels!=IntPtr.Zero) {
+                    uint count=(ushort)Marshal.ReadInt16(labels,4);
+                    for (uint i=0;i<count && i<1024;i++) {
+                        IntPtr ace; if (!GetAce(labels,i,out ace)) break;
+                        if (Marshal.ReadByte(ace)!=0x11 || (ushort)Marshal.ReadInt16(ace,2)<12) continue;
+                        var label=Map(); label["sid"]=new SecurityIdentifier(IntPtr.Add(ace,8)).Value;
+                        label["mask"]="0x"+((uint)Marshal.ReadInt32(ace,4)).ToString("X8"); label["flags"]=Marshal.ReadByte(ace,1); entries.Add(label);
+                    }
+                }
+                row["mandatoryLabels"]=entries.ToArray();
+            }
         } finally { if (text != IntPtr.Zero) LocalFree(text); if (descriptor != IntPtr.Zero) LocalFree(descriptor); }
         return row;
     }
