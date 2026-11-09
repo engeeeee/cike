@@ -3,7 +3,7 @@ name: Build Windows core diagnostic
 on:
   push:
     branches: [windows-core-compatibility]
-    paths: [scripts/windows-core-report.cs, scripts/build-core-report.js, .github/workflows/windows-core-report.yml]
+    paths: [scripts/windows-core-report.cs, scripts/windows-core-access.cs, scripts/build-core-report.js, .github/workflows/windows-core-report.yml]
   workflow_dispatch:
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
         working-directory: report-files
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.10.3-kernel-diagnostics.2
+          tag_name: v0.10.3-kernel-diagnostics.3
           target_commitish: ${{ github.sha }}
           name: Camoufox Windows 内核诊断工具
           prerelease: true
@@ -60,8 +60,10 @@ jobs:
           body: |
             用于定位「Camoufox 单独启动也出现 tab crashed」的 Windows 原生异常。
 
-            下载并完整解压 `CIKE-Camoufox-Diagnostic-windows.zip`，双击 `CIKE-Core-Diagnostic.exe`。出现记录提示后，回到 CIKE 打开会崩溃的环境一次；保持诊断窗口等待 45 秒，再将桌面生成的 `CIKE-Camoufox-report-日期时间.json` 发回。
+            下载并完整解压 `CIKE-Camoufox-Diagnostic-windows.zip`，双击 `CIKE-Core-Diagnostic.exe`。工具会自动检查权限并用临时环境测试本地页面，约一分钟后将桌面生成的 `CIKE-Camoufox-report-日期时间.json` 发回；无需手动反复打开 CIKE。
 
-            包含系统、CPU/显卡与驱动、内存、关键文件完整性、近期故障，以及本次 Camoufox 进程树的真实退出码。新增进程句柄观察，即使 Windows 没有生成应用程序错误记录，也可捕获退出状态。工具不会启动浏览器、修改注册表或环境、读取 Cookie/密码/代理配置，也不会上传数据。
+            第三版针对 `0xC0000022 / STATUS_ACCESS_DENIED` 增加 DLL 的读取和执行检查（含低完整性启动令牌）、目录权限和强制完整性标签、Code Integrity / AppLocker / Defender 等相关拦截记录，以及默认和软件渲染两组离线页面验证。仅 SHA-256 与官方基准一致的内核才会被自动测试。
+
+            临时环境只打开本地 data: 页面，强制不可用的本机代理并禁止直连回退。原有浏览器沙箱保持启用；不打开已有环境，不读取 Cookie、密码或代理配置，不修改内核、文件权限、注册表或系统安全设置，不上传数据。测试进程独立放入 Windows Job，超时只清理本工具创建的进程树。
 
             **这是诊断工具，不是宣称已经修复内核崩溃的 CIKE 更新。** 内核基准文件来自校验过 SHA-256 的官方 158.0.1-beta.41 Windows 包，程序已在 Windows 构建并完成自检。应用正式版仍为 0.10.3。

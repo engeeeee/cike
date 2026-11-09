@@ -14,10 +14,9 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-// Standalone .NET Framework 4 tool. Reads only host details, the selected
-// kernel's files and that kernel's Application Error records. No browser is
-// launched and no browser profile, proxy configuration or memory dump is read.
-public static class CikeCoreReport {
+// Standalone .NET Framework 4 tool. Host/integrity and native access checks;
+// disposable offline probes never open an existing browser profile.
+public static partial class CikeCoreReport {
     static JavaScriptSerializer Json = new JavaScriptSerializer();
     static List<string> Errors = new List<string>();
     static string[] CrashFields = { "AppVersion", "ModuleVersion", "ExceptionCode", "FaultingOffset" };
@@ -48,6 +47,7 @@ public static class CikeCoreReport {
         readonly Dictionary<uint, Tracked> Processes = new Dictionary<uint, Tracked>();
         readonly List<Dictionary<string, object>> Pending = new List<Dictionary<string, object>>();
         readonly Dictionary<uint, string> Roles = new Dictionary<uint, string>();
+        readonly Dictionary<uint, object> Details = new Dictionary<uint, object>();
         readonly string Root;
         readonly Thread Poller;
         ManagementEventWatcher Watcher;
@@ -66,6 +66,8 @@ public static class CikeCoreReport {
             Poller = new Thread(Poll); Poller.IsBackground = true; Poller.Start();
         }
         void FindRole(uint id) {
+            try { var details=Map(); details["mitigations"]=ProcessMitigations(id); details["externalModules"]=ExternalModules(id,Root); lock (Sync) Details[id]=details; } catch {}
+            lock (Sync) if (Roles.ContainsKey(id)) return;
             try {
                 using (var process = new ManagementObject("Win32_Process.Handle='" + id + "'")) {
                     process.Get(); string command = Text(process["CommandLine"]), role = "browser";
@@ -97,6 +99,7 @@ public static class CikeCoreReport {
                             if (own) {
                                 lock (Sync) Family.Add(entry.Id);
                                 Processes.Add(entry.Id, new Tracked { Id=entry.Id, Parent=entry.Parent, Name=entry.Name, Handle=handle });
+                                string nativeRole=NativeRole(handle); if (nativeRole != null) lock (Sync) Roles[entry.Id]=nativeRole;
                                 uint processId = entry.Id; ThreadPool.QueueUserWorkItem(delegate(object state) { FindRole(processId); });
                             } else CloseHandle(handle);
                         } while (Process32NextW(snapshot, ref entry));
@@ -120,7 +123,8 @@ public static class CikeCoreReport {
                     if (Family.Contains((uint)row["parent"])) Family.Add((uint)row["pid"]);
                 var output = new List<object>(); var seen = new HashSet<string>();
                 foreach (var row in Pending) if (Family.Contains((uint)row["pid"]) && seen.Add(row["pid"] + ":" + row["exitStatus"])) {
-                    string role; if (Roles.TryGetValue((uint)row["pid"], out role)) row["role"] = role; output.Add(row);
+                    string role; if (Roles.TryGetValue((uint)row["pid"], out role)) row["role"] = role;
+                    object details; if (Details.TryGetValue((uint)row["pid"], out details)) row["details"] = details; output.Add(row);
                 }
                 return output.ToArray();
             }
@@ -254,6 +258,7 @@ public static class CikeCoreReport {
                 if (!observed) throw new Exception("Native child exit status was not captured");
             }
         } finally { Directory.Delete(probe, true); }
+        AccessSelfTest();
         Console.WriteLine("Windows core report self-test passed");
     }
     public static int Main(string[] args) {
@@ -262,14 +267,14 @@ public static class CikeCoreReport {
             if (args.Length == 2 && args[0] == "--exit-fixture") { Thread.Sleep(500); return Int32.Parse(args[1]); }
             if (args.Length == 1 && args[0] == "--self-test") { SelfTest(); return 0; }
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("CIKE 内核诊断 v2（原生进程退出码）");
+            Console.WriteLine("CIKE 内核诊断 v3（执行权限与自动离线验证）");
             Console.WriteLine("正在读取系统错误和校验内核文件，请稍候…");
-            string executable = FindKernel(), output = "";
-            for (int i = 0; i < args.Length; i++) { if (args[i] == "--kernel" && i + 1 < args.Length) executable = args[++i]; else if (args[i] == "--output" && i + 1 < args.Length) output = args[++i]; else throw new ArgumentException("Invalid argument"); }
+            string executable = FindKernel(), output = ""; bool probe = pause;
+            for (int i = 0; i < args.Length; i++) { if (args[i] == "--kernel" && i + 1 < args.Length) executable = args[++i]; else if (args[i] == "--output" && i + 1 < args.Length) output = args[++i]; else if (args[i] == "--probe") probe = true; else throw new ArgumentException("Invalid argument"); }
             Dictionary<string, object> reference;
             using (var resource = typeof(CikeCoreReport).Assembly.GetManifestResourceStream("CIKE.KernelHashes.json"))
             using (var reader = new StreamReader(resource, Encoding.UTF8)) reference = Json.Deserialize<Dictionary<string, object>>(reader.ReadToEnd());
-            var report = Map(); report["format"] = 1; report["toolVersion"] = 2; report["time"] = DateTime.UtcNow.ToString("o");
+            var report = Map(); report["format"] = 1; report["toolVersion"] = 3; report["time"] = DateTime.UtcNow.ToString("o");
             report["os"] = Query("SELECT Version,BuildNumber,OSArchitecture FROM Win32_OperatingSystem", new string[] { "Version", "BuildNumber", "OSArchitecture" });
             report["cpu"] = Query("SELECT Name,NumberOfCores,NumberOfLogicalProcessors FROM Win32_Processor", new string[] { "Name", "NumberOfCores", "NumberOfLogicalProcessors" });
             report["graphics"] = Query("SELECT Name,DriverVersion FROM Win32_VideoController", new string[] { "Name", "DriverVersion" });
@@ -279,18 +284,24 @@ public static class CikeCoreReport {
                 values["commitLimitMiB"] = memory.CommitLimit / 1048576; values["availableCommitMiB"] = memory.AvailableCommit / 1048576; report["memory"] = values;
             }
             report["kernel"] = KernelInfo(executable, reference); report["applicationErrors"] = CrashRecords(executable);
-            if (pause && File.Exists(executable)) {
-                using (var capture = new ExitCapture(executable)) {
-                    Console.WriteLine("请现在回到 CIKE，打开会崩溃的环境一次。保持本窗口，正在记录 45 秒…");
-                    Thread.Sleep(45000); report["nativeProcessExits"] = capture.Results();
-                }
-            }
+            Console.WriteLine("正在只读检查目录、DLL 执行权限和低完整性令牌访问…");
+            report["loaderAccess"] = AccessReport(executable, reference);
+            report["launchPolicies"] = LaunchPolicies(executable);
+            bool verified = File.Exists(executable);
+            if (verified) foreach (Dictionary<string, object> file in (object[])((Dictionary<string, object>)report["kernel"])["files"]) if (Text(file["status"]) != "match") verified = false;
+            if (probe && verified) {
+                Console.WriteLine("正在用临时环境测试本地页面（默认渲染，最长 25 秒）…");
+                object first = RenderProbe(executable, false);
+                Console.WriteLine("正在用另一个临时环境测试本地页面（软件渲染，最长 25 秒）…");
+                report["renderProbes"] = new object[] { first, RenderProbe(executable, true) };
+            } else if (probe) report["renderProbeSkipped"] = "kernel-not-verified";
+            report["securityEvents"] = SecurityRecords(executable);
             report["errors"] = Errors.ToArray();
             if (String.IsNullOrEmpty(output)) output = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "CIKE-Camoufox-report-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".json");
             File.WriteAllText(output, Json.Serialize(report), new UTF8Encoding(false));
             Console.OutputEncoding = Encoding.UTF8;
             Console.WriteLine("诊断已保存到：" + output);
-            Console.WriteLine("请将这份 JSON 报告发回。工具没有修改浏览器环境或内核。");
+            Console.WriteLine("请将这份 JSON 报告发回。工具没有修改现有环境、内核权限或系统安全设置。");
             return 0;
         } catch (Exception e) { Console.Error.WriteLine("Diagnostic failed: " + e.GetType().Name + " / 0x" + e.HResult.ToString("X8")); return 1; }
         finally { if (pause) { Console.WriteLine("按回车关闭窗口"); Console.ReadLine(); } }
