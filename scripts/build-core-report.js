@@ -32,12 +32,17 @@ async function main() {
   execFileSync(binary, ['--kernel', executable, '--probe', '--output', fixture], { stdio: 'inherit' });
   const report = JSON.parse(fs.readFileSync(fixture));
   if (!report.os.length || !report.cpu.length || report.kernel.files.some(file => file.status !== 'match')) throw new Error('Native host/integrity verification failed');
-  if (!report.loaderAccess.lowToken || report.renderProbes?.length !== 2 || report.renderProbes.some(probe => probe.status !== 'painted')) throw new Error('Offline native rendering verification failed: ' + JSON.stringify(report));
+  if (!report.loaderAccess.lowToken || report.renderProbes?.length !== 4 ||
+      report.renderProbes.slice(0, 2).some(probe => probe.status !== 'painted') ||
+      report.renderProbes.slice(2).some(probe => probe.status !== 'observed' || !probe.visibleWindow) ||
+      report.renderProbes.some(probe => probe.nativeProcessExits?.some(row => row.exitStatus === '0xC0000022'))) {
+    throw new Error('Offline native rendering/window verification failed: ' + JSON.stringify(report));
+  }
   fs.rmSync(manifest);
   fs.writeFileSync(path.join(output, '使用说明.txt'), '\ufeff' + [
     'CIKE / Camoufox Windows 内核诊断', '',
     '1. 完整解压，双击 CIKE-Core-Diagnostic.exe。无需安装或管理员权限。',
-    '2. 工具会自动检查执行权限，并用两个临时环境测试本地页面，最长约一分钟，无需手动打开 CIKE。',
+    '2. 工具会自动检查执行权限，验证离线渲染，并短暂打开两个临时窗口，约一分钟、最长约两分钟，无需手动打开 CIKE。',
     '3. 桌面会生成 CIKE-Camoufox-report-日期时间.json，将这份报告发回用于定位。', '',
     '收集：系统/CPU/显卡与驱动、内存、关键文件完整性、目录和 DLL 的读取/执行权限、安全策略拦截记录，以及临时进程树退出码。',
     '自动测试只打开 data: 本地页面，临时环境强制使用不可连接的本机代理并禁止直连回退，测试结束后清理。',

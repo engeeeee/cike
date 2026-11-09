@@ -262,6 +262,11 @@ public static partial class CikeCoreReport {
     [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr value, uint timeout);
     [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr process, out uint code);
+    delegate bool WindowVisitor(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool EnumWindows(WindowVisitor visitor, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint id);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool contained);
     [DllImport("shell32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CommandLineToArgvW(string command, out int count);
     static string QuoteArgument(string value) { return "\"" + Regex.Replace(Regex.Replace(value, @"(\\*)""", "$1$1\\\""), @"(\\+)$", "$1$1") + "\""; }
     static object[] ProbeExits(object[] records, uint root) {
@@ -269,8 +274,19 @@ public static partial class CikeCoreReport {
         for (int pass=0; pass<8; pass++) foreach (Dictionary<string, object> row in records) if (own.Contains((uint)row["parent"])) own.Add((uint)row["pid"]);
         var result=new List<object>(); foreach (Dictionary<string, object> row in records) if (own.Contains((uint)row["pid"])) result.Add(row); return result.ToArray();
     }
-    static object RenderProbe(string executable, bool software) {
-        var result=Map(); result["mode"]=software ? "software" : "default";
+    static bool VisibleProbeWindow(IntPtr job) {
+        bool found=false;
+        EnumWindows(delegate(IntPtr window, IntPtr parameter) {
+            if (!IsWindowVisible(window)) return true;
+            uint id; GetWindowThreadProcessId(window,out id); IntPtr process=OpenProcess(0x1000,false,id);
+            if (process == IntPtr.Zero) return true;
+            try { bool contained; if (IsProcessInJob(process,job,out contained) && contained) found=true; } finally { CloseHandle(process); }
+            return !found;
+        },IntPtr.Zero);
+        return found;
+    }
+    static object RenderProbe(string executable, bool software, bool headed=false) {
+        var result=Map(); result["mode"]=(headed ? "headed-" : "") + (software ? "software" : "default");
         string root=Path.Combine(Path.GetTempPath(), "cike-offline-probe-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
         IntPtr job=IntPtr.Zero; var process=new ProcessInfo(); bool assigned=false;
         try {
@@ -304,7 +320,9 @@ public static partial class CikeCoreReport {
             string serialized=Json.Serialize(prefs); for (int i=0; i<serialized.Length; i+=2047) env["CAMOU_PREFS_" + (i/2047+1)]=serialized.Substring(i, Math.Min(2047, serialized.Length-i));
             var environment=new StringBuilder(); foreach (var entry in env) environment.Append(entry.Key).Append('=').Append(entry.Value).Append('\0'); environment.Append('\0');
             string url="data:text/html,<html><body style=\"margin:0;background:rgb(18,52,86)\">CIKE offline probe</body></html>";
-            string[] args={executable, "-headless", "-no-remote", "-wait-for-browser", "-profile", profile, "--screenshot", screenshot, "--window-size", "128,128", url};
+            string[] args=headed
+                ? new string[] {executable, "-no-remote", "-wait-for-browser", "-profile", profile, "--width", "640", "--height", "480", url}
+                : new string[] {executable, "-headless", "-no-remote", "-wait-for-browser", "-profile", profile, "--screenshot", screenshot, "--window-size", "128,128", url};
             var command=new List<string>(); foreach (string arg in args) command.Add(QuoteArgument(arg));
             job=CreateJobObjectW(IntPtr.Zero, null); if (job == IntPtr.Zero) throw new Win32Exception();
             var limits=new JobLimits(); limits.Basic.Flags=0x2000; // KILL_ON_JOB_CLOSE, only the suspended probe and its children
@@ -314,17 +332,27 @@ public static partial class CikeCoreReport {
                 if (!CreateProcessW(executable, new StringBuilder(String.Join(" ", command.ToArray())), IntPtr.Zero, IntPtr.Zero, false, 0x08000404, environment.ToString(), Path.GetDirectoryName(executable), ref startup, out process)) throw new Win32Exception();
                 if (!AssignProcessToJobObject(job, process.Process)) throw new Win32Exception(); assigned=true;
                 if (ResumeThread(process.Thread) == UInt32.MaxValue) throw new Win32Exception();
-                bool timedOut=WaitForSingleObject(process.Process, 25000) != 0;
+                bool timedOut=false; DateTime cleanup;
+                if (headed) {
+                    Thread.Sleep(12000);
+                    result["visibleWindow"]=VisibleProbeWindow(job);
+                    result["status"]=WaitForSingleObject(process.Process,0)==0 ? "exited-during-observation" : "observed";
+                } else timedOut=WaitForSingleObject(process.Process,25000)!=0;
+                cleanup=DateTime.UtcNow;
                 if (timedOut) { TerminateJobObject(job, 1); WaitForSingleObject(process.Process, 2000); }
-                uint code; if (GetExitCodeProcess(process.Process, out code)) result["exitStatus"]="0x" + code.ToString("X8");
-                result["status"]=timedOut ? "timeout" : "no-render";
-                if (File.Exists(screenshot)) using (var bitmap=new Bitmap(screenshot)) {
+                uint code; if (WaitForSingleObject(process.Process,0)==0 && GetExitCodeProcess(process.Process,out code)) result["exitStatus"]="0x" + code.ToString("X8"); else result["processState"]="running";
+                if (!headed) result["status"]=timedOut ? "timeout" : "no-render";
+                if (!headed && File.Exists(screenshot)) using (var bitmap=new Bitmap(screenshot)) {
                     Color pixel=bitmap.GetPixel(bitmap.Width/2, bitmap.Height/2);
                     result["width"]=bitmap.Width; result["height"]=bitmap.Height; result["pixel"]=new int[] {pixel.R,pixel.G,pixel.B};
                     if (!timedOut && bitmap.Width==128 && bitmap.Height==128 && pixel.R==18 && pixel.G==52 && pixel.B==86) result["status"]="painted";
                 }
                 // Stop only this job before taking the final exit snapshot.
-                TerminateJobObject(job, 1); Thread.Sleep(150); result["nativeProcessExits"]=ProbeExits(capture.Results(), process.Id);
+                result["cleanupStartedAt"]=cleanup.ToString("o");
+                TerminateJobObject(job, 1); Thread.Sleep(150);
+                object[] exits=ProbeExits(capture.Results(), process.Id);
+                foreach (Dictionary<string,object> row in exits) if (String.CompareOrdinal(Text(row["time"]),cleanup.ToString("o"))>=0 && Text(row["exitStatus"])=="0x00000001") row["toolCleanup"]=true;
+                result["nativeProcessExits"]=exits;
             }
         } catch (Exception e) { result["status"]="error"; result["error"]=e.GetType().Name; result["hresult"]="0x" + e.HResult.ToString("X8"); if (e is Win32Exception) result["win32"]=((Win32Exception)e).NativeErrorCode; }
         finally {
